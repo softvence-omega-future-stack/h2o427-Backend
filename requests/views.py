@@ -23,6 +23,10 @@ class RequestViewSet(viewsets.ModelViewSet):
     ordering = ['-created_at']
 
     def get_queryset(self):
+        # Handle Swagger schema generation
+        if getattr(self, 'swagger_fake_view', False):
+            return Request.objects.none()
+            
         if self.request.user.is_staff:
             # Admin can see all requests
             return Request.objects.all().order_by('-created_at')
