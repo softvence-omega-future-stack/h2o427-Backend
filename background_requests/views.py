@@ -53,39 +53,95 @@ class RequestViewSet(viewsets.ModelViewSet):
             serializer.validated_data.pop('status', None)
         serializer.save()
 
-    @action(detail=True, methods=['get'])
+    @action(detail=True, methods=['get'], url_path='download-report', url_name='download-report')
     def download_report(self, request, pk=None):
         """Allow clients to download their background check report"""
         try:
             bg_request = self.get_object()
-            if hasattr(bg_request, 'report') and bg_request.report.pdf:
-                report = bg_request.report
-                return Response({
-                    'report_url': request.build_absolute_uri(report.pdf.url),
-                    'generated_at': report.generated_at,
-                    'notes': report.notes,
-                    'file_size': report.pdf.size if report.pdf else 0
-                })
-            else:
+            
+            # Check if report exists
+            if not hasattr(bg_request, 'report'):
                 return Response(
-                    {'message': 'Report not available yet'}, 
+                    {
+                        'error': 'Report not available yet',
+                        'status': bg_request.status,
+                        'message': 'The background check is still being processed. Please check back later.'
+                    }, 
                     status=status.HTTP_404_NOT_FOUND
                 )
+            
+            report = bg_request.report
+            
+            # Check if PDF file exists
+            if not report.pdf:
+                return Response(
+                    {
+                        'error': 'Report PDF not available',
+                        'message': 'The report exists but the PDF file is missing.'
+                    }, 
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Return report details with download URL
+            return Response({
+                'success': True,
+                'report': {
+                    'id': report.id,
+                    'download_url': request.build_absolute_uri(report.pdf.url),
+                    'filename': report.pdf.name.split('/')[-1],
+                    'generated_at': report.generated_at,
+                    'notes': report.notes,
+                    'file_size': report.pdf.size if report.pdf else 0,
+                    'file_size_mb': f"{report.pdf.size / (1024 * 1024):.2f} MB" if report.pdf else "0 MB"
+                },
+                'request': {
+                    'id': bg_request.id,
+                    'name': bg_request.name,
+                    'status': bg_request.status
+                }
+            })
+            
+        except Request.DoesNotExist:
+            return Response(
+                {'error': 'Request not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
         except Exception as e:
             return Response(
-                {'error': str(e)}, 
+                {
+                    'error': 'An error occurred',
+                    'details': str(e)
+                }, 
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-    @action(detail=True, methods=['patch'], permission_classes=[permissions.IsAdminUser])
+    @action(detail=True, methods=['get', 'patch'], permission_classes=[permissions.IsAdminUser], url_path='update-status', url_name='update-status')
     def update_status(self, request, pk=None):
         """Update request status (admin only)"""
         bg_request = self.get_object()
+        
+        if request.method == 'GET':
+            # Return current status and available options
+            return Response({
+                'request_id': bg_request.id,
+                'request_name': bg_request.name,
+                'current_status': bg_request.status,
+                'available_statuses': ['Pending', 'In Progress', 'Completed'],
+                'instructions': 'Send a PATCH request with {"status": "new_status"} to update',
+                'example': {
+                    'method': 'PATCH',
+                    'body': {'status': 'Completed'}
+                }
+            })
+        
+        # PATCH request - update status
         serializer = RequestUpdateSerializer(bg_request, data=request.data, partial=True)
         if serializer.is_valid():
+            old_status = bg_request.status
             serializer.save()
             return Response({
-                'message': f'Status updated to {serializer.validated_data["status"]}',
+                'success': True,
+                'message': f'Status updated from "{old_status}" to "{serializer.validated_data["status"]}"',
                 'request': RequestSerializer(bg_request).data
             })
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
