@@ -1,6 +1,6 @@
 from django.db import models
 from django.contrib.auth import get_user_model
-from requests.models import Request
+from background_requests.models import Request
 
 User = get_user_model()
 

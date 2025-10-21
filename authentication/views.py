@@ -1,138 +1,170 @@
-from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework import status, views, permissions, viewsets, generics
+import random
+from rest_framework import status, views
 from rest_framework.response import Response
-from rest_framework.decorators import action
-from django.contrib.auth import get_user_model
-from .serializers import RegisterSerializer, LoginSerializer, UserProfileSerializer, UserListSerializer
+from .serializers import UserRegistrationSerializer, PasswordResetSerializer
+from .models import PhoneOTP, User
+from twilio.rest import Client
+from django.conf import settings
 
-User = get_user_model()
 
-class RegisterView(generics.CreateAPIView):
-    """
-    Register a new user account
-    
-    Create a new user with username, email, password and optional profile information.
-    Returns user data and JWT tokens upon successful registration.
-    """
-    queryset = User.objects.all()
-    serializer_class = RegisterSerializer
-    permission_classes = [permissions.AllowAny]
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth import authenticate
+from rest_framework.exceptions import AuthenticationFailed
+
+
+
+class UserRegistrationView(views.APIView):
+    permission_classes = []  # Allow unauthenticated access
     
     def get(self, request):
-        """Show registration form in browsable API"""
-        serializer = self.get_serializer()
+        """Display registration form in browsable API"""
+        serializer = UserRegistrationSerializer()
         return Response({
-            'message': 'User Registration Form',
-            'fields': serializer.fields.keys()
-        })
-    
-    def perform_create(self, serializer):
-        user = serializer.save()
-        # Generate tokens for immediate login
-        refresh = RefreshToken.for_user(user)
-        self.tokens = {
-            'access_token': str(refresh.access_token),
-            'refresh_token': str(refresh)
-        }
-        self.user_data = UserProfileSerializer(user).data
-    
-    def create(self, request, *args, **kwargs):
-        response = super().create(request, *args, **kwargs)
-        if response.status_code == status.HTTP_201_CREATED:
-            response.data = {
-                "message": "User registered successfully",
-                "user": self.user_data,
-                "tokens": self.tokens
+            "message": "User Registration Endpoint",
+            "fields": serializer.data if hasattr(serializer, 'data') else {
+                "username": "string (optional, will use email if not provided)",
+                "full_name": "string",
+                "email": "string (required, unique)",
+                "phone_number": "string (optional)",
+                "password": "string (required)",
+                "confirm_password": "string (required)"
             }
-        return response
-
-class LoginView(generics.GenericAPIView):
-    """
-    User login endpoint
-    
-    Authenticate user with username and password.
-    Returns user data and JWT tokens upon successful login.
-    """
-    serializer_class = LoginSerializer
-    permission_classes = [permissions.AllowAny]
-    
-    def get(self, request):
-        """Show login form in browsable API"""
-        serializer = self.get_serializer()
-        return Response({
-            'message': 'User Login Form',
-            'fields': ['username', 'password']
         })
     
     def post(self, request):
-        serializer = self.get_serializer(data=request.data)
+        serializer = UserRegistrationSerializer(data=request.data)
         if serializer.is_valid():
-            user = serializer.validated_data['user']
-            refresh = RefreshToken.for_user(user)
+            user = serializer.save()
             return Response({
-                'message': 'Login successful',
-                'user': UserProfileSerializer(user).data,
-                'tokens': {
-                    'access_token': str(refresh.access_token),
-                    'refresh_token': str(refresh)
+                "message": "User registered successfully!",
+                "user": {
+                    "username": user.username,
+                    "email": user.email,
+                    "full_name": user.full_name
                 }
-            })
+            }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-class UserProfileView(generics.RetrieveUpdateAPIView):
-    """
-    User profile management
-    
-    GET: Retrieve current user profile
-    PUT/PATCH: Update current user profile
-    """
-    serializer_class = UserProfileSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    
-    def get_object(self):
-        # Handle Swagger schema generation
-        if getattr(self, 'swagger_fake_view', False):
-            return User()
-        return self.request.user
-    
-    def get_queryset(self):
-        # Handle Swagger schema generation
-        if getattr(self, 'swagger_fake_view', False):
-            return User.objects.none()
-        return User.objects.filter(id=self.request.user.id)
 
-class UserViewSet(viewsets.ReadOnlyModelViewSet):
-    """
-    User management viewset (Admin only)
+class OTPRequestView(views.APIView):
+    permission_classes = []  # Allow unauthenticated access
     
-    Provides list and detail views for all users.
-    Only accessible by admin users.
-    """
-    queryset = User.objects.all().order_by('-date_joined')
-    permission_classes = [permissions.IsAdminUser]
+    def get(self, request):
+        """Display OTP request form"""
+        return Response({
+            "message": "Request OTP for phone verification",
+            "fields": {
+                "phone_number": "string (required, international format)"
+            }
+        })
     
-    def get_serializer_class(self):
-        if self.action == 'list':
-            return UserListSerializer
-        return UserProfileSerializer
-    
-    @action(detail=True, methods=['post'])
-    def make_staff(self, request, pk=None):
-        """Make a user staff member"""
-        user = self.get_object()
-        user.is_staff = True
-        user.save()
-        return Response({'message': f'{user.username} is now a staff member'})
-    
-    @action(detail=True, methods=['post'])
-    def remove_staff(self, request, pk=None):
-        """Remove staff privileges from user"""
-        user = self.get_object()
-        if user.is_superuser:
-            return Response(
-                {'error': 'Cannot remove superuser privileges'},
-                status=status.HTTP_400_BAD_REQUEST
+    def post(self, request):
+        phone_number = request.data.get('phone_number')
+        
+        if not phone_number:
+            return Response({"error": "Phone number is required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        otp_code = str(random.randint(100000, 999999))  # Generate 6-digit OTP
+
+        # Save OTP to the database
+        otp_instance = PhoneOTP.objects.create(phone_number=phone_number, code=otp_code)
+
+        # Send OTP via Twilio
+        try:
+            client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+            message = client.messages.create(
+                body=f"Your verification code is {otp_code}",
+                from_=settings.TWILIO_PHONE_NUMBER,
+                to=phone_number
             )
-        user.is_staff = False
-        user.save()
-        return Response({'message': f'{user.username} is no longer a staff member'})
+            return Response({"message": "OTP sent successfully!"}, status=status.HTTP_200_OK)
+        except Exception as e:
+            # If Twilio fails, still return success for development
+            return Response({
+                "message": "OTP generated (Twilio error - check configuration)",
+                "otp_code": otp_code,  # Only for development
+                "error": str(e)
+            }, status=status.HTTP_200_OK)
+
+
+class OTPVerifyView(views.APIView):
+    permission_classes = []  # Allow unauthenticated access
+    
+    def get(self, request):
+        """Display OTP verification form"""
+        return Response({
+            "message": "Verify OTP",
+            "fields": {
+                "phone_number": "string (required)",
+                "otp_code": "string (required, 6 digits)"
+            }
+        })
+    
+    def post(self, request):
+        phone_number = request.data.get('phone_number')
+        otp_code = request.data.get('otp_code')
+
+        otp = PhoneOTP.objects.filter(phone_number=phone_number, code=otp_code).first()
+
+        if not otp or otp.is_otp_expired():
+            return Response({"error": "Invalid or expired OTP"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        otp.verified = True
+        otp.save()
+
+        return Response({"message": "OTP verified successfully!"}, status=status.HTTP_200_OK)
+
+
+
+class UserLoginView(views.APIView):
+    permission_classes = []  # Allow unauthenticated access
+    
+    def get(self, request):
+        """Display login form in browsable API"""
+        return Response({
+            "message": "User Login Endpoint",
+            "fields": {
+                "email": "string (required, can also use username)",
+                "password": "string (required)"
+            }
+        })
+    
+    def post(self, request):
+        email = request.data.get('email')
+        password = request.data.get('password')
+
+        if not email or not password:
+            raise AuthenticationFailed('Email and password are required')
+
+        user = authenticate(request, username=email, password=password)
+
+        if user is None:
+            raise AuthenticationFailed('Invalid credentials')
+
+        refresh = RefreshToken.for_user(user)
+        access_token = refresh.access_token
+
+        return Response({
+            'refresh': str(refresh),
+            'access': str(access_token),
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'full_name': user.full_name,
+                'email': user.email,
+                'phone_number': user.phone_number
+            }
+        }, status=status.HTTP_200_OK)
+    
+
+
+
+class PasswordResetView(views.APIView):
+    def post(self, request):
+        serializer = PasswordResetSerializer(data=request.data)
+        if serializer.is_valid():
+            # Send the reset email
+            serializer.save()
+            return Response({"message": "Password reset link has been sent to your email."}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+

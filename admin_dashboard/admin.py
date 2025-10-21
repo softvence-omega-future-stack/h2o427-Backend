@@ -1,5 +1,5 @@
 from django.contrib import admin
-from requests.models import Request, Report
+from background_requests.models import Request, Report
 from .models import AdminDashboardSettings, RequestActivity, AdminNote, RequestAssignment
 
 @admin.register(AdminDashboardSettings)

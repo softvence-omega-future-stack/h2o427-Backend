@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from requests.models import Request, Report
+from background_requests.models import Request, Report
 from .models import AdminDashboardSettings, RequestActivity, AdminNote, RequestAssignment
 
 User = get_user_model()

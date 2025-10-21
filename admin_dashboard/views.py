@@ -1,7 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
-from requests.models import Request, Report
+from background_requests.models import Request, Report
 from .serializers import AdminRequestSerializer, AdminReportSerializer
 
 class AdminRequestView(APIView):

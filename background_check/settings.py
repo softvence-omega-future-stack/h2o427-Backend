@@ -51,7 +51,7 @@ INSTALLED_APPS = [
 
     # app
     'authentication',
-    'requests',
+    'background_requests',
     'admin_dashboard',
     'subscriptions'
 ]
@@ -152,6 +152,12 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 
+# Authentication backends
+AUTHENTICATION_BACKENDS = [
+    'authentication.backends.EmailBackend',  # Custom email authentication
+    'django.contrib.auth.backends.ModelBackend',  # Default username authentication
+]
+
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
@@ -216,6 +222,13 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Custom User Model
 AUTH_USER_MODEL = 'authentication.User'
 
+# Twilio / Phone OTP settings
+TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
+TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
+TWILIO_FROM_NUMBER = os.getenv('TWILIO_FROM_NUMBER')
+# OTP TTL in seconds (default 5 minutes)
+PHONE_OTP_TTL_SECONDS = int(os.getenv('PHONE_OTP_TTL_SECONDS', '300'))
+
 
 
 # Stripe
@@ -223,3 +236,15 @@ STRIPE_TEST_PUBLIC_KEY = os.getenv('STRIPE_TEST_PUBLIC_KEY', 'your-public-key') 
 STRIPE_TEST_SECRET_KEY = os.getenv('STRIPE_TEST_SECRET_KEY', 'your-secret-key')  # Replace with your actual test secret key
 STRIPE_TEST_ENDPOINT_SECRET = os.getenv('STRIPE_TEST_ENDPOINT_SECRET', 'your-endpoint-secret')  # Replace with your actual endpoint secret key for webhooks
 
+
+
+# Email settings for sending password reset link
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'anower.softvence@gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'anower.softvence@gmail.com'  # Your email
+EMAIL_HOST_PASSWORD = 'anower77'  # Your email password
+
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+FRONTEND_URL = 'http://localhost:3000'  # Set this to your frontend URL

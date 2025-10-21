@@ -4,7 +4,7 @@ from rest_framework import status, permissions
 from rest_framework.decorators import action
 from django.db.models import Q, Count
 from django.contrib.auth import get_user_model
-from requests.models import Request, Report
+from background_requests.models import Request, Report
 from .models import AdminDashboardSettings, RequestActivity, AdminNote, RequestAssignment
 from .serializers import (
     AdminRequestSerializer, AdminReportSerializer, AdminDashboardSettingsSerializer,
