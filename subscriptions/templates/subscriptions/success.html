@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Successful! 🎉</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .success-container {
+            background: white;
+            border-radius: 20px;
+            padding: 50px;
+            max-width: 600px;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            animation: slideUp 0.5s ease;
+        }
+        
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .success-icon {
+            width: 100px;
+            height: 100px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 30px;
+            animation: scaleIn 0.5s ease 0.2s both;
+        }
+        
+        @keyframes scaleIn {
+            from {
+                transform: scale(0);
+            }
+            to {
+                transform: scale(1);
+            }
+        }
+        
+        .success-icon::after {
+            content: "✓";
+            color: white;
+            font-size: 60px;
+            font-weight: bold;
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            color: #333;
+            margin-bottom: 15px;
+        }
+        
+        .message {
+            color: #666;
+            font-size: 1.2rem;
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+        
+        .subscription-details {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 25px;
+            margin-bottom: 30px;
+            text-align: left;
+        }
+        
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+        
+        .detail-label {
+            color: #666;
+            font-weight: 500;
+        }
+        
+        .detail-value {
+            color: #333;
+            font-weight: bold;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            background: #4caf50;
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+        }
+        
+        .buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-secondary {
+            background: white;
+            color: #667eea;
+            border: 2px solid #667eea;
+        }
+        
+        .btn-secondary:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .features-list {
+            text-align: left;
+            margin: 20px 0;
+        }
+        
+        .features-list li {
+            padding: 8px 0;
+            color: #555;
+            display: flex;
+            align-items: center;
+        }
+        
+        .features-list li:before {
+            content: "✓";
+            color: #4caf50;
+            font-weight: bold;
+            margin-right: 10px;
+            font-size: 1.2rem;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 50px;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        @media (max-width: 768px) {
+            .success-container {
+                padding: 30px 20px;
+            }
+            
+            h1 {
+                font-size: 2rem;
+            }
+            
+            .buttons {
+                flex-direction: column;
+            }
+            
+            .btn {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="success-container">
+        {% if subscription %}
+            <div class="success-icon"></div>
+            
+            <h1>Payment Successful! 🎉</h1>
+            <p class="message">
+                Your subscription has been activated successfully. You can now start using all the features of your plan!
+            </p>
+            
+            <div class="subscription-details">
+                <h3 style="margin-bottom: 20px; color: #333;">📋 Subscription Details</h3>
+                
+                <div class="detail-row">
+                    <span class="detail-label">Plan:</span>
+                    <span class="detail-value">{{ subscription.plan.name }}</span>
+                </div>
+                
+                <div class="detail-row">
+                    <span class="detail-label">Price:</span>
+                    <span class="detail-value">${{ subscription.plan.price }} / {{ subscription.plan.billing_interval }}</span>
+                </div>
+                
+                <div class="detail-row">
+                    <span class="detail-label">Status:</span>
+                    <span class="status-badge">{{ subscription.status|upper }}</span>
+                </div>
+                
+                <div class="detail-row">
+                    <span class="detail-label">Start Date:</span>
+                    <span class="detail-value">{{ subscription.start_date|date:"M d, Y" }}</span>
+                </div>
+                
+                <div class="detail-row">
+                    <span class="detail-label">Next Billing:</span>
+                    <span class="detail-value">{{ subscription.end_date|date:"M d, Y" }}</span>
+                </div>
+                
+                {% if subscription.plan.max_requests_per_month > 900000 %}
+                    <div class="detail-row">
+                        <span class="detail-label">Requests:</span>
+                        <span class="detail-value">Unlimited</span>
+                    </div>
+                {% else %}
+                    <div class="detail-row">
+                        <span class="detail-label">Requests:</span>
+                        <span class="detail-value">{{ subscription.plan.max_requests_per_month }} / month</span>
+                    </div>
+                {% endif %}
+            </div>
+            
+            <div class="buttons">
+                <a href="{% url 'subscriptions:subscription_dashboard' %}" class="btn btn-primary">
+                    Go to Dashboard
+                </a>
+                <a href="{% url 'subscriptions:plans_list' %}" class="btn btn-secondary">
+                    View Plans
+                </a>
+            </div>
+        {% else %}
+            <div class="loading">
+                <div class="spinner"></div>
+                <p>Verifying your payment...</p>
+            </div>
+        {% endif %}
+    </div>
+    
+    <script>
+        // Success page animation
+        document.addEventListener('DOMContentLoaded', function() {
+            const successIcon = document.querySelector('.success-icon');
+            if (successIcon) {
+                successIcon.style.animation = 'scaleIn 0.5s ease 0.2s both';
+            }
+        });
+    </script>
+</body>
+</html>

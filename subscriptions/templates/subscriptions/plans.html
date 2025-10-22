@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subscription Plans - Background Check</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 50px;
+        }
+        
+        .header h1 {
+            font-size: 3rem;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+        
+        .plans-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            margin-bottom: 50px;
+        }
+        
+        .plan-card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .plan-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.3);
+        }
+        
+        .plan-card.featured {
+            border: 3px solid #667eea;
+        }
+        
+        .featured-badge {
+            position: absolute;
+            top: 20px;
+            right: -30px;
+            background: #667eea;
+            color: white;
+            padding: 5px 40px;
+            transform: rotate(45deg);
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+        
+        .plan-name {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 15px;
+        }
+        
+        .plan-price {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        .plan-price span {
+            font-size: 1rem;
+            color: #666;
+        }
+        
+        .plan-interval {
+            color: #999;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+        }
+        
+        .plan-description {
+            color: #666;
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+        
+        .plan-features {
+            list-style: none;
+            margin-bottom: 30px;
+        }
+        
+        .plan-features li {
+            padding: 10px 0;
+            border-bottom: 1px solid #f0f0f0;
+            color: #555;
+            display: flex;
+            align-items: center;
+        }
+        
+        .plan-features li:before {
+            content: "✓";
+            color: #667eea;
+            font-weight: bold;
+            margin-right: 10px;
+            font-size: 1.2rem;
+        }
+        
+        .subscribe-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        
+        .subscribe-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .subscribe-btn:active {
+            transform: scale(0.98);
+        }
+        
+        .user-info {
+            background: rgba(255,255,255,0.2);
+            backdrop-filter: blur(10px);
+            border-radius: 10px;
+            padding: 20px;
+            color: white;
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .user-info h3 {
+            font-size: 1.2rem;
+        }
+        
+        .logout-btn {
+            background: rgba(255,255,255,0.3);
+            color: white;
+            border: 1px solid white;
+            padding: 8px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .logout-btn:hover {
+            background: white;
+            color: #667eea;
+        }
+        
+        .loading {
+            text-align: center;
+            color: white;
+            font-size: 1.5rem;
+            padding: 50px;
+        }
+        
+        .error {
+            background: #ff4444;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .plans-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="user-info">
+            <div>
+                <h3>👤 {{ user.email }}</h3>
+                <p>Choose your plan to get started</p>
+            </div>
+            <a href="/admin/logout/" class="logout-btn" style="text-decoration: none; display: inline-block; line-height: normal;">Logout</a>
+        </div>
+        
+        <div class="header">
+            <h1>Choose Your Plan</h1>
+            <p>Select the perfect plan for your background check needs</p>
+        </div>
+        
+        {% if messages %}
+            {% for message in messages %}
+                <div class="error">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+        
+        <div class="plans-grid">
+            {% for plan in plans %}
+            <div class="plan-card {% if forloop.counter == 2 %}featured{% endif %}">
+                {% if forloop.counter == 2 %}
+                    <div class="featured-badge">POPULAR</div>
+                {% endif %}
+                
+                <div class="plan-name">{{ plan.name }}</div>
+                <div class="plan-price">
+                    ${{ plan.price }}
+                    <span>/ {{ plan.billing_interval }}</span>
+                </div>
+                <div class="plan-interval">
+                    {% if plan.billing_interval == 'monthly' %}
+                        Billed monthly
+                    {% else %}
+                        Billed annually
+                    {% endif %}
+                </div>
+                
+                {% if plan.description %}
+                    <div class="plan-description">{{ plan.description }}</div>
+                {% endif %}
+                
+                <ul class="plan-features">
+                    {% for feature in plan.features %}
+                        <li>{{ feature.name }}</li>
+                    {% endfor %}
+                    
+                    {% if plan.max_requests_per_month > 900000 %}
+                        <li>Unlimited requests</li>
+                    {% else %}
+                        <li>Up to {{ plan.max_requests_per_month }} requests/month</li>
+                    {% endif %}
+                </ul>
+                
+                <form method="post" action="{% url 'subscriptions:subscribe_plan' %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="plan_id" value="{{ plan.id }}">
+                    <button type="submit" class="subscribe-btn">
+                        Subscribe Now
+                    </button>
+                </form>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    
+    <script>
+        // Add smooth scroll and animations
+        document.addEventListener('DOMContentLoaded', function() {
+            const cards = document.querySelectorAll('.plan-card');
+            cards.forEach((card, index) => {
+                card.style.opacity = '0';
+                card.style.transform = 'translateY(50px)';
+                setTimeout(() => {
+                    card.style.transition = 'all 0.5s ease';
+                    card.style.opacity = '1';
+                    card.style.transform = 'translateY(0)';
+                }, index * 100);
+            });
+        });
+    </script>
+</body>
+</html>

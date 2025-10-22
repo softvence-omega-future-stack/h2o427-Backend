@@ -7,6 +7,7 @@ from .serializers import (
     RequestSerializer, RequestCreateSerializer, RequestListSerializer, 
     RequestUpdateSerializer, ReportSerializer, ReportCreateSerializer
 )
+from subscriptions.models import UserSubscription
 
 class RequestViewSet(viewsets.ModelViewSet):
     """
@@ -44,7 +45,36 @@ class RequestViewSet(viewsets.ModelViewSet):
         return RequestSerializer
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        # Check if user has active subscription
+        try:
+            subscription = UserSubscription.objects.get(
+                user=self.request.user,
+                status='active'
+            )
+        except UserSubscription.DoesNotExist:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied({
+                'error': 'No active subscription',
+                'message': 'You need an active subscription to submit background check requests.',
+                'action': 'Please subscribe to a plan to continue.',
+                'plans_url': '/api/subscriptions/ui/plans/'
+            })
+        
+        # Check if user can make more requests
+        if not subscription.can_make_request:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied({
+                'error': 'Request limit reached',
+                'message': f'You have used all {subscription.plan.max_requests_per_month} requests for this month.',
+                'current_usage': subscription.requests_used_this_month,
+                'limit': subscription.plan.max_requests_per_month,
+                'action': 'Please upgrade your plan or wait until next month.',
+                'upgrade_url': '/api/subscriptions/ui/plans/'
+            })
+        
+        # Save the request and increment usage
+        request_obj = serializer.save(user=self.request.user)
+        subscription.increment_usage()
 
     def perform_update(self, serializer):
         # Only admins can update status
@@ -202,3 +232,73 @@ class ReportViewSet(viewsets.ModelViewSet):
             {'error': 'No PDF file available'}, 
             status=status.HTTP_404_NOT_FOUND
         )
+
+
+# ==================== Template-Based Views (MVT Pattern) ====================
+
+from django.shortcuts import render, redirect
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+
+@login_required
+def submit_request_view(request):
+    """Display form to submit background check request"""
+    try:
+        subscription = UserSubscription.objects.get(
+            user=request.user,
+            status='active'
+        )
+    except UserSubscription.DoesNotExist:
+        messages.error(request, 'You need an active subscription to submit requests. Please subscribe to a plan first.')
+        return redirect('subscriptions:plans_list')
+    
+    # Check if user can make requests
+    if not subscription.can_make_request:
+        messages.error(request, f'You have used all {subscription.plan.max_requests_per_month} requests for this month.')
+        return redirect('subscriptions:subscription_dashboard')
+    
+    if request.method == 'POST':
+        try:
+            # Create the background check request
+            bg_request = Request.objects.create(
+                user=request.user,
+                name=request.POST.get('name'),
+                dob=request.POST.get('dob'),
+                email=request.POST.get('email'),
+                phone_number=request.POST.get('phone_number'),
+                city=request.POST.get('city'),
+                state=request.POST.get('state'),
+                status='Pending'
+            )
+            
+            # Increment usage
+            subscription.increment_usage()
+            
+            messages.success(request, f'Background check request submitted successfully! Request ID: {bg_request.id}')
+            return redirect('requests:request_success', request_id=bg_request.id)
+            
+        except Exception as e:
+            messages.error(request, f'Error submitting request: {str(e)}')
+    
+    # Calculate usage percentage
+    usage_percentage = 0
+    if subscription.plan.max_requests_per_month <= 900000:
+        usage_percentage = (subscription.requests_used_this_month / subscription.plan.max_requests_per_month) * 100
+    
+    return render(request, 'requests/submit.html', {
+        'subscription': subscription,
+        'usage_percentage': min(usage_percentage, 100)
+    })
+
+
+@login_required
+def request_success_view(request, request_id):
+    """Display success page after request submission"""
+    try:
+        bg_request = Request.objects.get(id=request_id, user=request.user)
+        return render(request, 'requests/success.html', {
+            'request': bg_request
+        })
+    except Request.DoesNotExist:
+        messages.error(request, 'Request not found')
+        return redirect('subscriptions:subscription_dashboard')

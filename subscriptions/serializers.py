@@ -42,24 +42,32 @@ class SubscriptionPlanSerializer(serializers.ModelSerializer):
         # Add built-in features
         if obj.basic_identity_verification:
             features.append("Basic identity verification")
-        if obj.criminal_records_search:
+        if obj.criminal_records_search and not obj.federal_records_search:
             features.append("County criminal records search")
+        if obj.federal_records_search:
+            features.append("Federal, state & county criminal records")
         if obj.employment_verification:
             features.append("Employment history verification")
         if obj.education_verification:
             features.append("Education verification")
-        if obj.federal_records_search:
-            features.append("Federal, state & county criminal records")
         if obj.priority_support:
             features.append("Priority Support")
         if obj.advanced_reports:
-            features.append("Advanced report access")
+            features.append("30-day report access")
         if obj.api_access:
             features.append("API Access")
         if obj.bulk_requests:
             features.append("Bulk requests")
         
-        features.append(f"Up to {obj.max_requests_per_month} requests per month")
+        # Add request limit
+        if obj.max_requests_per_month > 900000:
+            features.append("Unlimited requests")
+        else:
+            features.append(f"Up to {obj.max_requests_per_month} requests per month")
+        
+        # Add support level
+        if not obj.priority_support:
+            features.append("Standard support")
         
         return features
 

@@ -179,7 +179,7 @@ class UserProfileView(views.APIView):
     
     def get(self, request):
         """Get user profile"""
-        serializer = UserProfileSerializer(request.user)
+        serializer = UserProfileSerializer(request.user, context={'request': request})
         return Response({
             'success': True,
             'user': serializer.data
@@ -192,22 +192,24 @@ class UserProfileUpdateView(views.APIView):
     
     def get(self, request):
         """Display current profile for browsable API"""
-        serializer = UserProfileSerializer(request.user)
+        serializer = UserProfileSerializer(request.user, context={'request': request})
         return Response({
             'message': 'Update your profile',
             'current_profile': serializer.data,
             'updatable_fields': {
                 'full_name': 'Your full name',
-                'phone_number': 'Your phone number (international format)'
+                'phone_number': 'Your phone number (international format)',
+                'profile_picture': 'Upload profile picture (JPG, PNG, GIF, WEBP - max 5MB)'
             }
         })
     
     def patch(self, request):
-        """Update user profile"""
+        """Update user profile (supports multipart/form-data for image upload)"""
         serializer = UserProfileUpdateSerializer(
             request.user, 
             data=request.data, 
-            partial=True
+            partial=True,
+            context={'request': request}
         )
         
         if serializer.is_valid():
@@ -215,15 +217,16 @@ class UserProfileUpdateView(views.APIView):
             return Response({
                 'success': True,
                 'message': 'Profile updated successfully',
-                'user': UserProfileSerializer(user).data
+                'user': UserProfileSerializer(user, context={'request': request}).data
             })
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     def put(self, request):
-        """Full update of user profile"""
+        """Full update of user profile (supports multipart/form-data for image upload)"""
         serializer = UserProfileUpdateSerializer(
             request.user, 
-            data=request.data
+            data=request.data,
+            context={'request': request}
         )
         
         if serializer.is_valid():
@@ -231,7 +234,7 @@ class UserProfileUpdateView(views.APIView):
             return Response({
                 'success': True,
                 'message': 'Profile updated successfully',
-                'user': UserProfileSerializer(user).data
+                'user': UserProfileSerializer(user, context={'request': request}).data
             })
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -304,8 +307,39 @@ class ResetPasswordView(views.APIView):
     """Reset password with token from email"""
     permission_classes = []  # Allow unauthenticated access
     
-    def get(self, request):
-        """Display reset password form"""
+    def get(self, request, uid=None, token=None):
+        """Display reset password form or validate token"""
+        # If uid and token provided in URL, validate them
+        if uid and token:
+            from django.utils.http import urlsafe_base64_decode
+            from django.contrib.auth.tokens import default_token_generator
+            
+            try:
+                user_id = urlsafe_base64_decode(uid).decode()
+                user = User.objects.get(pk=user_id)
+                
+                if default_token_generator.check_token(user, token):
+                    return Response({
+                        'valid': True,
+                        'message': 'Token is valid. You can now reset your password.',
+                        'uid': uid,
+                        'token': token,
+                        'user_email': user.email,
+                        'instructions': 'Send POST request to /api/auth/reset-password/ with uid, token, new_password, and confirm_new_password'
+                    })
+                else:
+                    return Response({
+                        'valid': False,
+                        'error': 'Invalid or expired reset link'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                    
+            except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+                return Response({
+                    'valid': False,
+                    'error': 'Invalid reset link'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Default response for form display
         return Response({
             'message': 'Reset Password',
             'fields': {

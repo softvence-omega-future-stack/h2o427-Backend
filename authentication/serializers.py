@@ -74,19 +74,30 @@ class PasswordResetSerializer(serializers.Serializer):
 
 class UserProfileSerializer(serializers.ModelSerializer):
     """Serializer for viewing user profile"""
+    profile_picture_url = serializers.SerializerMethodField()
     
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'full_name', 'phone_number', 'date_joined', 'last_login']
-        read_only_fields = ['id', 'username', 'email', 'date_joined', 'last_login']
+        fields = ['id', 'username', 'email', 'full_name', 'phone_number', 'profile_picture', 'profile_picture_url', 'date_joined', 'last_login']
+        read_only_fields = ['id', 'username', 'email', 'date_joined', 'last_login', 'profile_picture_url']
+    
+    def get_profile_picture_url(self, obj):
+        """Get full URL for profile picture"""
+        if obj.profile_picture:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.profile_picture.url)
+            return obj.profile_picture.url
+        return None
 
 
 class UserProfileUpdateSerializer(serializers.ModelSerializer):
     """Serializer for updating user profile"""
+    profile_picture = serializers.ImageField(required=False, allow_null=True)
     
     class Meta:
         model = User
-        fields = ['full_name', 'phone_number']
+        fields = ['full_name', 'phone_number', 'profile_picture']
         extra_kwargs = {
             'full_name': {
                 'required': False,
@@ -95,6 +106,10 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
             'phone_number': {
                 'required': False,
                 'help_text': 'Your phone number (international format, e.g., +1234567890)'
+            },
+            'profile_picture': {
+                'required': False,
+                'help_text': 'Upload profile picture (JPG, PNG, max 5MB)'
             }
         }
     
@@ -104,10 +119,34 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Phone number must be in international format (start with +)")
         return value
     
+    def validate_profile_picture(self, value):
+        """Validate profile picture"""
+        if value:
+            # Check file size (max 5MB)
+            if value.size > 5 * 1024 * 1024:
+                raise serializers.ValidationError("Image file size must be less than 5MB")
+            
+            # Check file type
+            allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
+            if hasattr(value, 'content_type') and value.content_type not in allowed_types:
+                raise serializers.ValidationError("Only JPG, PNG, GIF, and WEBP images are allowed")
+        
+        return value
+    
     def update(self, instance, validated_data):
         """Update user profile"""
+        # Delete old profile picture if new one is uploaded
+        if 'profile_picture' in validated_data and validated_data['profile_picture']:
+            if instance.profile_picture:
+                # Delete old file
+                instance.profile_picture.delete(save=False)
+        
         instance.full_name = validated_data.get('full_name', instance.full_name)
         instance.phone_number = validated_data.get('phone_number', instance.phone_number)
+        
+        if 'profile_picture' in validated_data:
+            instance.profile_picture = validated_data['profile_picture']
+        
         instance.save()
         return instance
 
@@ -165,8 +204,9 @@ class ForgotPasswordSerializer(serializers.Serializer):
         uid = urlsafe_base64_encode(str(user.pk).encode())
         token = default_token_generator.make_token(user)
         
-        # Create reset URL
-        reset_url = f"{settings.FRONTEND_URL}/reset-password/{uid}/{token}/"
+        # Create reset URLs (both frontend and backend)
+        backend_url = f"http://127.0.0.1:8000/api/auth/reset-password/{uid}/{token}/"
+        frontend_url = f"{settings.FRONTEND_URL}/reset-password/{uid}/{token}/"
         
         # Send email
         try:
@@ -178,7 +218,10 @@ Hello {user.full_name or user.username},
 You requested to reset your password for your Background Check System account.
 
 Click the link below to reset your password:
-{reset_url}
+{frontend_url}
+
+Or use this API endpoint directly:
+{backend_url}
 
 This link will expire in 24 hours.
 

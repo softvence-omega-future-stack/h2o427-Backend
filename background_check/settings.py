@@ -235,17 +235,20 @@ PHONE_OTP_TTL_SECONDS = int(os.getenv('PHONE_OTP_TTL_SECONDS', '300'))
 # Stripe
 STRIPE_TEST_PUBLIC_KEY = os.getenv('STRIPE_TEST_PUBLIC_KEY', 'your-public-key')  # Replace with your actual test public key
 STRIPE_TEST_SECRET_KEY = os.getenv('STRIPE_TEST_SECRET_KEY', 'your-secret-key')  # Replace with your actual test secret key
-STRIPE_TEST_ENDPOINT_SECRET = os.getenv('STRIPE_TEST_ENDPOINT_SECRET', 'your-endpoint-secret')  # Replace with your actual endpoint secret key for webhooks
+STRIPE_TEST_ENDPOINT_SECRET = os.getenv('STRIPE_TEST_ENDPOINT_SECRET', 'whsec_74be980122a5c652a8712d0fc6b1f25c04877e635901f4f6bcde6af1909a1179')  # Webhook signing secret
 
 
 
 # Email settings for sending password reset link
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'anower.softvence@gmail.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'anower.softvence@gmail.com'  # Your email
-EMAIL_HOST_PASSWORD = 'anower77'  # Your email password
+EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() in ['true', '1', 'yes']
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
 
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
-FRONTEND_URL = 'http://localhost:3000'  # Set this to your frontend URL
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')  # Set this to your frontend URL
+
+
+

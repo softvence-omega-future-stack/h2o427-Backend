@@ -63,7 +63,7 @@ class SubscriptionPlanAdmin(admin.ModelAdmin):
     
     def price_display(self, obj):
         """Format price with currency"""
-        return format_html("${}", obj.price)
+        return format_html("$<span>{}</span>", obj.price)
     price_display.short_description = "Price"
     price_display.admin_order_field = 'price'
     
@@ -83,7 +83,7 @@ class SubscriptionPlanAdmin(admin.ModelAdmin):
             subscription__plan=obj,
             status='succeeded'
         ).aggregate(total=models.Sum('amount'))['total'] or 0
-        return format_html("${:.2f}", total_revenue)
+        return format_html("$<span>{}</span>", f"{total_revenue:.2f}")
     revenue_generated.short_description = "Total Revenue"
     
     fieldsets = (
@@ -182,20 +182,22 @@ class UserSubscriptionAdmin(admin.ModelAdmin):
     
     def requests_used_display(self, obj):
         """Show usage with progress bar"""
-        if obj.plan and obj.plan.max_requests_per_month > 0:
+        if obj.plan and obj.plan.max_requests_per_month > 0 and obj.plan.max_requests_per_month < 900000:
             percentage = (obj.requests_used_this_month / obj.plan.max_requests_per_month) * 100
             color = 'green' if percentage < 80 else 'orange' if percentage < 100 else 'red'
             return format_html(
-                '{}/{} <span style="color: {};">({:.1f}%)</span>',
+                '{}/{} <span style="color: {};">({}%)</span>',
                 obj.requests_used_this_month,
                 obj.plan.max_requests_per_month,
                 color,
-                percentage
+                f"{percentage:.1f}"
             )
         elif obj.plan:
-            return format_html("{}/∞", obj.requests_used_this_month)
+            # For unlimited plans
+            return format_html("<span>{} / Unlimited</span>", obj.requests_used_this_month)
         else:
-            return format_html("{}/No Plan", obj.requests_used_this_month)
+            # No plan assigned
+            return format_html("<span>{} / No Plan</span>", obj.requests_used_this_month)
     requests_used_display.short_description = "Requests Used"
     
     def remaining_requests(self, obj):
@@ -215,7 +217,7 @@ class UserSubscriptionAdmin(admin.ModelAdmin):
         from django.utils import timezone
         if obj.start_date:
             age = timezone.now() - obj.start_date
-            return format_html("{} days", age.days)
+            return format_html("<span>{} days</span>", age.days)
         return "N/A"
     subscription_age.short_description = "Subscription Age"
     
@@ -225,7 +227,7 @@ class UserSubscriptionAdmin(admin.ModelAdmin):
             subscription=obj,
             status='succeeded'
         ).aggregate(total=models.Sum('amount'))['total'] or 0
-        return format_html("${:.2f}", total)
+        return format_html("$<span>{}</span>", f"{total:.2f}")
     total_payments.short_description = "Total Payments"
     
     fieldsets = (
@@ -315,7 +317,7 @@ class PaymentHistoryAdmin(admin.ModelAdmin):
     
     def amount_display(self, obj):
         """Format amount with currency"""
-        return format_html("${:.2f}", obj.amount)
+        return format_html("$<span>{}</span>", f"{obj.amount:.2f}")
     amount_display.short_description = "Amount"
     amount_display.admin_order_field = 'amount'
     

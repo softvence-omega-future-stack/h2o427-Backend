@@ -8,6 +8,8 @@ class User(AbstractUser):
     full_name = models.CharField(max_length=255, blank=True, null=True, help_text="User's full name")
     email = models.EmailField(unique=True)
     phone_number = models.CharField(max_length=20, unique=True, blank=True, null=True, db_index=True, help_text='International phone number, e.g. +15551234567')
+    profile_picture = models.ImageField(upload_to='profile_pictures/', blank=True, null=True, help_text="User's profile picture")
+    stripe_customer_id = models.CharField(max_length=255, blank=True, null=True, help_text='Stripe customer ID')
     
     # Override email to make it required
     REQUIRED_FIELDS = ['email']
