@@ -1,0 +1,12 @@
+# for python
+__pycache__/
+*.py[cod]  
+*.pyo
+*.pyd
+*.env
+.env.*
+venv/
+env/
+.venv/
+env.bak/
+venv.bak/

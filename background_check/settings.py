@@ -54,7 +54,8 @@ INSTALLED_APPS = [
     'authentication',
     'background_requests',
     'admin_dashboard',
-    'subscriptions'
+    'subscriptions',
+    'notifications',
 ]
 
 MIDDLEWARE = [

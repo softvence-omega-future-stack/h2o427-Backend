@@ -133,8 +133,7 @@ class ReportSerializer(serializers.ModelSerializer):
                 'help_text': 'Upload the PDF report file'
             },
             'notes': {
-                'help_text': 'Optional notes about the background check findings',
-                'style': {'base_template': 'textarea.html', 'rows': 4}
+                'help_text': 'Optional notes about the background check findings'
             }
         }
 
@@ -161,13 +160,12 @@ class ReportCreateSerializer(serializers.ModelSerializer):
             },
             'pdf': {
                 'help_text': 'Upload the background check report (PDF format)',
-                'style': {'template': 'file_upload.html'}
+                'required': True
             },
             'notes': {
                 'help_text': 'Optional notes about the findings',
                 'required': False,
-                'allow_blank': True,
-                'style': {'base_template': 'textarea.html', 'rows': 4}
+                'allow_blank': True
             }
         }
 

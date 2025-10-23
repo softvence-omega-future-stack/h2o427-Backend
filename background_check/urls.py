@@ -38,6 +38,7 @@ urlpatterns = [
     path('api/requests/', include('background_requests.urls')),
     path('api/admin/', include('admin_dashboard.urls')),
     path('api/subscriptions/', include('subscriptions.urls')),
+    path('api/notifications/', include('notifications.urls')),
 ]
 
 # Serve media files during development
