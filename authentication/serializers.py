@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import User
 from django.contrib.auth.hashers import make_password, check_password
+import os
 
 
 from django.contrib.auth.tokens import default_token_generator
@@ -204,9 +205,14 @@ class ForgotPasswordSerializer(serializers.Serializer):
         uid = urlsafe_base64_encode(str(user.pk).encode())
         token = default_token_generator.make_token(user)
         
-        # Create reset URLs (both frontend and backend)
-        backend_url = f"http://127.0.0.1:8000/api/auth/reset-password/{uid}/{token}/"
-        frontend_url = f"{settings.FRONTEND_URL}/reset-password/{uid}/{token}/"
+        # Use main domain for both links (https://h2o427-backend-u9bx.onrender.com)
+        main_domain = os.getenv('MAIN_DOMAIN', 'https://h2o427-backend-u9bx.onrender.com')
+        
+        # Frontend reset page URL
+        frontend_url = f"{main_domain}/reset-password/{uid}/{token}/"
+        
+        # API endpoint URL
+        backend_url = f"{main_domain}/api/auth/reset-password/"
         
         # Send email
         try:

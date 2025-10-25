@@ -1,6 +1,7 @@
 import random
 from rest_framework import status, views, permissions
 from rest_framework.response import Response
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from .serializers import (
     UserRegistrationSerializer, PasswordResetSerializer,
     UserProfileSerializer, UserProfileUpdateSerializer,
@@ -14,6 +15,7 @@ from drf_yasg import openapi
 
 
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
 from django.contrib.auth import authenticate
 from rest_framework.exceptions import AuthenticationFailed
 
@@ -229,6 +231,56 @@ class UserLoginView(views.APIView):
                 'phone_number': user.phone_number
             }
         }, status=status.HTTP_200_OK)
+
+
+class UserLogoutView(views.APIView):
+    """Logout user by blacklisting refresh token"""
+    permission_classes = [permissions.IsAuthenticated]
+    
+    @swagger_auto_schema(
+        operation_description="Logout user by blacklisting the refresh token",
+        operation_summary="User Logout",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['refresh'],
+            properties={
+                'refresh': openapi.Schema(type=openapi.TYPE_STRING, description='Refresh token to blacklist', example='eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...'),
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Logout successful",
+                examples={
+                    "application/json": {
+                        "success": True,
+                        "message": "Logout successful"
+                    }
+                }
+            ),
+            400: "Bad Request - Invalid token"
+        },
+        tags=['Authentication']
+    )
+    def post(self, request):
+        try:
+            refresh_token = request.data.get('refresh')
+            if not refresh_token:
+                return Response({
+                    'error': 'Refresh token is required'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+            
+            return Response({
+                'success': True,
+                'message': 'Logout successful'
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                'error': 'Invalid token or token already blacklisted',
+                'details': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
     
 
 
@@ -286,6 +338,7 @@ class UserProfileView(views.APIView):
 class UserProfileUpdateView(views.APIView):
     """Update authenticated user's profile"""
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
     
     @swagger_auto_schema(
         operation_description="Update user profile (partial update). Supports multipart/form-data for image upload.",

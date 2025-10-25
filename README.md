@@ -41,6 +41,38 @@ A simplified Django REST API application for managing background check requests 
 
 ## Quick Start
 
+### Option 1: Docker (Recommended) 🐳
+
+1. **Install Docker Desktop:**
+   - Windows/Mac: [Download Docker Desktop](https://www.docker.com/products/docker-desktop)
+   - Linux: Install Docker Engine and Docker Compose
+
+2. **Clone and Setup:**
+   ```bash
+   git clone <repository-url>
+   cd h2o427-Backend
+   cp .env.example .env  # Edit with your credentials
+   ```
+
+3. **Start with Docker Compose:**
+   ```bash
+   docker-compose up --build
+   ```
+
+4. **Create Superuser:**
+   ```bash
+   docker-compose exec web python manage.py createsuperuser
+   ```
+
+5. **Access the Application:**
+   - **Swagger UI:** `http://localhost:8000/swagger/` ⭐
+   - **Admin Panel:** `http://localhost:8000/admin/`
+   - **Via Nginx:** `http://localhost/` (reverse proxy)
+
+**📖 See `DOCKER_SETUP.md` for complete Docker documentation**
+
+### Option 2: Local Development
+
 1. **Install Dependencies:**
    ```bash
    pip install -r requirements.txt

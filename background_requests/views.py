@@ -51,17 +51,14 @@ class RequestViewSet(viewsets.ModelViewSet):
         operation_summary="Create Background Check Request",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
-            required=['name', 'email', 'date_of_birth', 'ssn', 'address', 'city', 'state', 'zip_code'],
+            required=['name', 'dob', 'city', 'state', 'email', 'phone_number'],
             properties={
                 'name': openapi.Schema(type=openapi.TYPE_STRING, description='Full name of the person', example='John Smith'),
                 'email': openapi.Schema(type=openapi.TYPE_STRING, format='email', description='Email address', example='john.smith@example.com'),
-                'phone': openapi.Schema(type=openapi.TYPE_STRING, description='Phone number', example='+1234567890'),
-                'date_of_birth': openapi.Schema(type=openapi.TYPE_STRING, format='date', description='Date of birth (YYYY-MM-DD)', example='1990-05-15'),
-                'ssn': openapi.Schema(type=openapi.TYPE_STRING, description='Social Security Number', example='123-45-6789'),
-                'address': openapi.Schema(type=openapi.TYPE_STRING, description='Street address', example='123 Main Street'),
+                'phone_number': openapi.Schema(type=openapi.TYPE_STRING, description='Phone number', example='+1234567890'),
+                'dob': openapi.Schema(type=openapi.TYPE_STRING, format='date', description='Date of birth (YYYY-MM-DD)', example='1990-05-15'),
                 'city': openapi.Schema(type=openapi.TYPE_STRING, description='City', example='New York'),
                 'state': openapi.Schema(type=openapi.TYPE_STRING, description='State (2-letter code)', example='NY'),
-                'zip_code': openapi.Schema(type=openapi.TYPE_STRING, description='ZIP code', example='10001'),
             }
         ),
         responses={
@@ -72,7 +69,11 @@ class RequestViewSet(viewsets.ModelViewSet):
                         "id": 1,
                         "name": "John Smith",
                         "email": "john.smith@example.com",
-                        "status": "pending",
+                        "phone_number": "+1234567890",
+                        "dob": "1990-05-15",
+                        "city": "New York",
+                        "state": "NY",
+                        "status": "Pending",
                         "created_at": "2024-01-20T10:30:00Z"
                     }
                 }
