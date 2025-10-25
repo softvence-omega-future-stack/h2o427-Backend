@@ -5,6 +5,7 @@ from django.conf.urls.static import static
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
+from authentication.views import ResetPasswordView
 
 # Swagger/OpenAPI Schema configuration
 schema_view = get_schema_view(
@@ -25,6 +26,9 @@ schema_view = get_schema_view(
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    
+    # Password Reset Page (HTML - accessible directly, not under /api/)
+    path('reset-password/<str:uid>/<str:token>/', ResetPasswordView.as_view(), name='reset-password-page'),
     
     # Swagger/OpenAPI Documentation
     path('', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
