@@ -2,6 +2,8 @@ from rest_framework import viewsets, status, permissions, filters
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from django_filters.rest_framework import DjangoFilterBackend
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 from .models import Request, Report
 from .serializers import (
     RequestSerializer, RequestCreateSerializer, RequestListSerializer, 
@@ -43,6 +45,45 @@ class RequestViewSet(viewsets.ModelViewSet):
         elif self.action == 'partial_update' and self.request.user.is_staff:
             return RequestUpdateSerializer
         return RequestSerializer
+
+    @swagger_auto_schema(
+        operation_description="Create a new background check request. Requires active subscription.",
+        operation_summary="Create Background Check Request",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['name', 'email', 'date_of_birth', 'ssn', 'address', 'city', 'state', 'zip_code'],
+            properties={
+                'name': openapi.Schema(type=openapi.TYPE_STRING, description='Full name of the person', example='John Smith'),
+                'email': openapi.Schema(type=openapi.TYPE_STRING, format='email', description='Email address', example='john.smith@example.com'),
+                'phone': openapi.Schema(type=openapi.TYPE_STRING, description='Phone number', example='+1234567890'),
+                'date_of_birth': openapi.Schema(type=openapi.TYPE_STRING, format='date', description='Date of birth (YYYY-MM-DD)', example='1990-05-15'),
+                'ssn': openapi.Schema(type=openapi.TYPE_STRING, description='Social Security Number', example='123-45-6789'),
+                'address': openapi.Schema(type=openapi.TYPE_STRING, description='Street address', example='123 Main Street'),
+                'city': openapi.Schema(type=openapi.TYPE_STRING, description='City', example='New York'),
+                'state': openapi.Schema(type=openapi.TYPE_STRING, description='State (2-letter code)', example='NY'),
+                'zip_code': openapi.Schema(type=openapi.TYPE_STRING, description='ZIP code', example='10001'),
+            }
+        ),
+        responses={
+            201: openapi.Response(
+                description="Request created successfully",
+                examples={
+                    "application/json": {
+                        "id": 1,
+                        "name": "John Smith",
+                        "email": "john.smith@example.com",
+                        "status": "pending",
+                        "created_at": "2024-01-20T10:30:00Z"
+                    }
+                }
+            ),
+            400: "Bad Request - Validation errors",
+            403: "Forbidden - No active subscription or request limit reached"
+        },
+        tags=['Background Check Requests']
+    )
+    def create(self, request, *args, **kwargs):
+        return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         # Check if user has active subscription

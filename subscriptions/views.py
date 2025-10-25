@@ -8,6 +8,8 @@ from django.utils import timezone
 from datetime import datetime, timedelta
 import stripe
 from django.conf import settings
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 
 from .models import SubscriptionPlan, UserSubscription, PaymentHistory, SubscriptionFeature
 from .serializers import (
@@ -25,6 +27,38 @@ class SubscriptionPlansView(APIView):
     """View to list all available subscription plans"""
     permission_classes = [permissions.AllowAny]
     
+    @swagger_auto_schema(
+        operation_description="Get all available subscription plans",
+        operation_summary="List Subscription Plans",
+        responses={
+            200: openapi.Response(
+                description="List of subscription plans",
+                examples={
+                    "application/json": [
+                        {
+                            "id": 1,
+                            "name": "Basic Plan",
+                            "price": "9.99",
+                            "billing_cycle": "monthly",
+                            "max_requests_per_month": 10,
+                            "features": ["Feature 1", "Feature 2"],
+                            "is_active": True
+                        },
+                        {
+                            "id": 2,
+                            "name": "Premium Plan",
+                            "price": "29.99",
+                            "billing_cycle": "monthly",
+                            "max_requests_per_month": 50,
+                            "features": ["Feature 1", "Feature 2", "Feature 3"],
+                            "is_active": True
+                        }
+                    ]
+                }
+            )
+        },
+        tags=['Subscriptions']
+    )
     def get(self, request):
         plans = SubscriptionPlan.objects.filter(is_active=True).order_by('price')
         serializer = SubscriptionPlanSerializer(plans, many=True)

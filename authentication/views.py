@@ -9,6 +9,8 @@ from .serializers import (
 from .models import PhoneOTP, User
 from twilio.rest import Client
 from django.conf import settings
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 
 
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -20,21 +22,39 @@ from rest_framework.exceptions import AuthenticationFailed
 class UserRegistrationView(views.APIView):
     permission_classes = []  # Allow unauthenticated access
     
-    def get(self, request):
-        """Display registration form in browsable API"""
-        serializer = UserRegistrationSerializer()
-        return Response({
-            "message": "User Registration Endpoint",
-            "fields": serializer.data if hasattr(serializer, 'data') else {
-                "username": "string (optional, will use email if not provided)",
-                "full_name": "string",
-                "email": "string (required, unique)",
-                "phone_number": "string (optional)",
-                "password": "string (required)",
-                "confirm_password": "string (required)"
+    @swagger_auto_schema(
+        operation_description="Register a new user account",
+        operation_summary="User Registration",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['email', 'password', 'confirm_password'],
+            properties={
+                'username': openapi.Schema(type=openapi.TYPE_STRING, description='Username (optional, will use email if not provided)', example='johndoe'),
+                'full_name': openapi.Schema(type=openapi.TYPE_STRING, description='Full name of the user', example='John Doe'),
+                'email': openapi.Schema(type=openapi.TYPE_STRING, format='email', description='Email address (must be unique)', example='john.doe@example.com'),
+                'phone_number': openapi.Schema(type=openapi.TYPE_STRING, description='Phone number in international format', example='+1234567890'),
+                'password': openapi.Schema(type=openapi.TYPE_STRING, format='password', description='Password (min 8 characters)', example='SecurePass123!'),
+                'confirm_password': openapi.Schema(type=openapi.TYPE_STRING, format='password', description='Confirm password', example='SecurePass123!'),
             }
-        })
-    
+        ),
+        responses={
+            201: openapi.Response(
+                description="User registered successfully",
+                examples={
+                    "application/json": {
+                        "message": "User registered successfully!",
+                        "user": {
+                            "username": "johndoe",
+                            "email": "john.doe@example.com",
+                            "full_name": "John Doe"
+                        }
+                    }
+                }
+            ),
+            400: "Bad Request - Validation errors"
+        },
+        tags=['Authentication']
+    )
     def post(self, request):
         serializer = UserRegistrationSerializer(data=request.data)
         if serializer.is_valid():
@@ -53,15 +73,29 @@ class UserRegistrationView(views.APIView):
 class OTPRequestView(views.APIView):
     permission_classes = []  # Allow unauthenticated access
     
-    def get(self, request):
-        """Display OTP request form"""
-        return Response({
-            "message": "Request OTP for phone verification",
-            "fields": {
-                "phone_number": "string (required, international format)"
+    @swagger_auto_schema(
+        operation_description="Request OTP for phone verification",
+        operation_summary="Request OTP",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['phone_number'],
+            properties={
+                'phone_number': openapi.Schema(type=openapi.TYPE_STRING, description='Phone number in international format', example='+1234567890'),
             }
-        })
-    
+        ),
+        responses={
+            200: openapi.Response(
+                description="OTP sent successfully",
+                examples={
+                    "application/json": {
+                        "message": "OTP sent successfully!"
+                    }
+                }
+            ),
+            400: "Bad Request - Phone number required"
+        },
+        tags=['Authentication - OTP']
+    )
     def post(self, request):
         phone_number = request.data.get('phone_number')
         
@@ -94,16 +128,30 @@ class OTPRequestView(views.APIView):
 class OTPVerifyView(views.APIView):
     permission_classes = []  # Allow unauthenticated access
     
-    def get(self, request):
-        """Display OTP verification form"""
-        return Response({
-            "message": "Verify OTP",
-            "fields": {
-                "phone_number": "string (required)",
-                "otp_code": "string (required, 6 digits)"
+    @swagger_auto_schema(
+        operation_description="Verify OTP code for phone verification",
+        operation_summary="Verify OTP",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['phone_number', 'otp_code'],
+            properties={
+                'phone_number': openapi.Schema(type=openapi.TYPE_STRING, description='Phone number used to request OTP', example='+1234567890'),
+                'otp_code': openapi.Schema(type=openapi.TYPE_STRING, description='6-digit OTP code', example='123456'),
             }
-        })
-    
+        ),
+        responses={
+            200: openapi.Response(
+                description="OTP verified successfully",
+                examples={
+                    "application/json": {
+                        "message": "OTP verified successfully!"
+                    }
+                }
+            ),
+            400: "Bad Request - Invalid or expired OTP"
+        },
+        tags=['Authentication - OTP']
+    )
     def post(self, request):
         phone_number = request.data.get('phone_number')
         otp_code = request.data.get('otp_code')
@@ -123,16 +171,38 @@ class OTPVerifyView(views.APIView):
 class UserLoginView(views.APIView):
     permission_classes = []  # Allow unauthenticated access
     
-    def get(self, request):
-        """Display login form in browsable API"""
-        return Response({
-            "message": "User Login Endpoint",
-            "fields": {
-                "email": "string (required, can also use username)",
-                "password": "string (required)"
+    @swagger_auto_schema(
+        operation_description="Login with email and password to get JWT tokens",
+        operation_summary="User Login",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['email', 'password'],
+            properties={
+                'email': openapi.Schema(type=openapi.TYPE_STRING, format='email', description='User email address', example='john.doe@example.com'),
+                'password': openapi.Schema(type=openapi.TYPE_STRING, format='password', description='User password', example='SecurePass123!'),
             }
-        })
-    
+        ),
+        responses={
+            200: openapi.Response(
+                description="Login successful",
+                examples={
+                    "application/json": {
+                        "refresh": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "access": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "user": {
+                            "id": 1,
+                            "username": "johndoe",
+                            "full_name": "John Doe",
+                            "email": "john.doe@example.com",
+                            "phone_number": "+1234567890"
+                        }
+                    }
+                }
+            ),
+            401: "Authentication Failed - Invalid credentials"
+        },
+        tags=['Authentication']
+    )
     def post(self, request):
         email = request.data.get('email')
         password = request.data.get('password')
@@ -177,6 +247,33 @@ class UserProfileView(views.APIView):
     """Get authenticated user's profile"""
     permission_classes = [permissions.IsAuthenticated]
     
+    @swagger_auto_schema(
+        operation_description="Get current authenticated user's profile information",
+        operation_summary="Get User Profile",
+        responses={
+            200: openapi.Response(
+                description="User profile retrieved successfully",
+                examples={
+                    "application/json": {
+                        "success": True,
+                        "user": {
+                            "id": 1,
+                            "username": "johndoe",
+                            "email": "john.doe@example.com",
+                            "full_name": "John Doe",
+                            "phone_number": "+1234567890",
+                            "profile_picture": "/media/profiles/pic.jpg",
+                            "profile_picture_url": "http://localhost:8000/media/profiles/pic.jpg",
+                            "date_joined": "2024-01-15T10:30:00Z",
+                            "last_login": "2024-01-20T14:25:00Z"
+                        }
+                    }
+                }
+            ),
+            401: "Unauthorized - Authentication required"
+        },
+        tags=['User Profile']
+    )
     def get(self, request):
         """Get user profile"""
         serializer = UserProfileSerializer(request.user, context={'request': request})
@@ -190,19 +287,40 @@ class UserProfileUpdateView(views.APIView):
     """Update authenticated user's profile"""
     permission_classes = [permissions.IsAuthenticated]
     
-    def get(self, request):
-        """Display current profile for browsable API"""
-        serializer = UserProfileSerializer(request.user, context={'request': request})
-        return Response({
-            'message': 'Update your profile',
-            'current_profile': serializer.data,
-            'updatable_fields': {
-                'full_name': 'Your full name',
-                'phone_number': 'Your phone number (international format)',
-                'profile_picture': 'Upload profile picture (JPG, PNG, GIF, WEBP - max 5MB)'
+    @swagger_auto_schema(
+        operation_description="Update user profile (partial update). Supports multipart/form-data for image upload.",
+        operation_summary="Update User Profile",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'full_name': openapi.Schema(type=openapi.TYPE_STRING, description='Full name', example='John Doe Updated'),
+                'phone_number': openapi.Schema(type=openapi.TYPE_STRING, description='Phone number (international format)', example='+1987654321'),
+                'profile_picture': openapi.Schema(type=openapi.TYPE_FILE, description='Profile picture (JPG, PNG, GIF, WEBP - max 5MB)'),
             }
-        })
-    
+        ),
+        responses={
+            200: openapi.Response(
+                description="Profile updated successfully",
+                examples={
+                    "application/json": {
+                        "success": True,
+                        "message": "Profile updated successfully",
+                        "user": {
+                            "id": 1,
+                            "username": "johndoe",
+                            "email": "john.doe@example.com",
+                            "full_name": "John Doe Updated",
+                            "phone_number": "+1987654321",
+                            "profile_picture_url": "http://localhost:8000/media/profiles/new_pic.jpg"
+                        }
+                    }
+                }
+            ),
+            400: "Bad Request - Validation errors",
+            401: "Unauthorized - Authentication required"
+        },
+        tags=['User Profile']
+    )
     def patch(self, request):
         """Update user profile (supports multipart/form-data for image upload)"""
         serializer = UserProfileUpdateSerializer(
@@ -221,6 +339,25 @@ class UserProfileUpdateView(views.APIView):
             })
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
+    @swagger_auto_schema(
+        operation_description="Full update of user profile. Supports multipart/form-data for image upload.",
+        operation_summary="Full Update User Profile",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['full_name', 'phone_number'],
+            properties={
+                'full_name': openapi.Schema(type=openapi.TYPE_STRING, description='Full name', example='John Doe Updated'),
+                'phone_number': openapi.Schema(type=openapi.TYPE_STRING, description='Phone number (international format)', example='+1987654321'),
+                'profile_picture': openapi.Schema(type=openapi.TYPE_FILE, description='Profile picture (JPG, PNG, GIF, WEBP - max 5MB)'),
+            }
+        ),
+        responses={
+            200: "Profile updated successfully",
+            400: "Bad Request - Validation errors",
+            401: "Unauthorized"
+        },
+        tags=['User Profile']
+    )
     def put(self, request):
         """Full update of user profile (supports multipart/form-data for image upload)"""
         serializer = UserProfileUpdateSerializer(
@@ -243,17 +380,33 @@ class ChangePasswordView(views.APIView):
     """Change password for authenticated user"""
     permission_classes = [permissions.IsAuthenticated]
     
-    def get(self, request):
-        """Display change password form"""
-        return Response({
-            'message': 'Change your password',
-            'fields': {
-                'old_password': 'Your current password',
-                'new_password': 'Your new password (min 8 characters)',
-                'confirm_new_password': 'Confirm your new password'
+    @swagger_auto_schema(
+        operation_description="Change password for authenticated user",
+        operation_summary="Change Password",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['old_password', 'new_password', 'confirm_new_password'],
+            properties={
+                'old_password': openapi.Schema(type=openapi.TYPE_STRING, format='password', description='Current password', example='OldPassword123!'),
+                'new_password': openapi.Schema(type=openapi.TYPE_STRING, format='password', description='New password (min 8 characters)', example='NewPassword123!'),
+                'confirm_new_password': openapi.Schema(type=openapi.TYPE_STRING, format='password', description='Confirm new password', example='NewPassword123!'),
             }
-        })
-    
+        ),
+        responses={
+            200: openapi.Response(
+                description="Password changed successfully",
+                examples={
+                    "application/json": {
+                        "success": True,
+                        "message": "Password changed successfully. Please login again with your new password."
+                    }
+                }
+            ),
+            400: "Bad Request - Validation errors",
+            401: "Unauthorized"
+        },
+        tags=['User Profile']
+    )
     def post(self, request):
         """Change user password"""
         serializer = ChangePasswordSerializer(
@@ -274,15 +427,31 @@ class ForgotPasswordView(views.APIView):
     """Request password reset (forgot password)"""
     permission_classes = []  # Allow unauthenticated access
     
-    def get(self, request):
-        """Display forgot password form"""
-        return Response({
-            'message': 'Forgot Password - Request Reset Link',
-            'fields': {
-                'email': 'Your registered email address'
+    @swagger_auto_schema(
+        operation_description="Request password reset link via email",
+        operation_summary="Forgot Password",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['email'],
+            properties={
+                'email': openapi.Schema(type=openapi.TYPE_STRING, format='email', description='Registered email address', example='john.doe@example.com'),
             }
-        })
-    
+        ),
+        responses={
+            200: openapi.Response(
+                description="Password reset email sent",
+                examples={
+                    "application/json": {
+                        "success": True,
+                        "message": "Password reset link has been sent to your email. Please check your inbox."
+                    }
+                }
+            ),
+            400: "Bad Request - Invalid email",
+            500: "Internal Server Error - Email sending failed"
+        },
+        tags=['Password Reset']
+    )
     def post(self, request):
         """Send password reset email"""
         serializer = ForgotPasswordSerializer(data=request.data)
@@ -307,49 +476,33 @@ class ResetPasswordView(views.APIView):
     """Reset password with token from email"""
     permission_classes = []  # Allow unauthenticated access
     
-    def get(self, request, uid=None, token=None):
-        """Display reset password form or validate token"""
-        # If uid and token provided in URL, validate them
-        if uid and token:
-            from django.utils.http import urlsafe_base64_decode
-            from django.contrib.auth.tokens import default_token_generator
-            
-            try:
-                user_id = urlsafe_base64_decode(uid).decode()
-                user = User.objects.get(pk=user_id)
-                
-                if default_token_generator.check_token(user, token):
-                    return Response({
-                        'valid': True,
-                        'message': 'Token is valid. You can now reset your password.',
-                        'uid': uid,
-                        'token': token,
-                        'user_email': user.email,
-                        'instructions': 'Send POST request to /api/auth/reset-password/ with uid, token, new_password, and confirm_new_password'
-                    })
-                else:
-                    return Response({
-                        'valid': False,
-                        'error': 'Invalid or expired reset link'
-                    }, status=status.HTTP_400_BAD_REQUEST)
-                    
-            except (TypeError, ValueError, OverflowError, User.DoesNotExist):
-                return Response({
-                    'valid': False,
-                    'error': 'Invalid reset link'
-                }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Default response for form display
-        return Response({
-            'message': 'Reset Password',
-            'fields': {
-                'uid': 'User ID from reset link',
-                'token': 'Token from reset link',
-                'new_password': 'Your new password (min 8 characters)',
-                'confirm_new_password': 'Confirm your new password'
+    @swagger_auto_schema(
+        operation_description="Reset password using token from email",
+        operation_summary="Reset Password",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['uid', 'token', 'new_password', 'confirm_new_password'],
+            properties={
+                'uid': openapi.Schema(type=openapi.TYPE_STRING, description='User ID from reset link', example='MQ'),
+                'token': openapi.Schema(type=openapi.TYPE_STRING, description='Token from reset link', example='bn5j7h-8a7d9c1e2f3g4h5i6j7k8l9m0'),
+                'new_password': openapi.Schema(type=openapi.TYPE_STRING, format='password', description='New password (min 8 characters)', example='NewSecurePass123!'),
+                'confirm_new_password': openapi.Schema(type=openapi.TYPE_STRING, format='password', description='Confirm new password', example='NewSecurePass123!'),
             }
-        })
-    
+        ),
+        responses={
+            200: openapi.Response(
+                description="Password reset successfully",
+                examples={
+                    "application/json": {
+                        "success": True,
+                        "message": "Password reset successfully. You can now login with your new password."
+                    }
+                }
+            ),
+            400: "Bad Request - Invalid token or validation errors"
+        },
+        tags=['Password Reset']
+    )
     def post(self, request):
         """Reset password with token"""
         serializer = ResetPasswordSerializer(data=request.data)

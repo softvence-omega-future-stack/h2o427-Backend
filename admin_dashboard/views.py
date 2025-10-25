@@ -1,18 +1,73 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 from background_requests.models import Request, Report
 from .serializers import AdminRequestSerializer, AdminReportSerializer
 
 class AdminRequestView(APIView):
     permission_classes = [permissions.IsAdminUser]
     
+    @swagger_auto_schema(
+        operation_description="Get all background check requests (Admin only)",
+        operation_summary="List All Requests (Admin)",
+        responses={
+            200: openapi.Response(
+                description="List of all background check requests",
+                examples={
+                    "application/json": [
+                        {
+                            "id": 1,
+                            "user": {"id": 2, "email": "user@example.com"},
+                            "name": "John Smith",
+                            "email": "john.smith@example.com",
+                            "status": "pending",
+                            "created_at": "2024-01-20T10:30:00Z"
+                        }
+                    ]
+                }
+            ),
+            403: "Forbidden - Admin only"
+        },
+        tags=['Admin Dashboard']
+    )
     def get(self, request):
         """Get all background check requests for admin dashboard"""
         requests = Request.objects.all().order_by('-created_at')
         serializer = AdminRequestSerializer(requests, many=True)
         return Response(serializer.data)
 
+    @swagger_auto_schema(
+        operation_description="Update request status (Admin only)",
+        operation_summary="Update Request Status",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['request_id', 'status'],
+            properties={
+                'request_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Background check request ID', example=1),
+                'status': openapi.Schema(type=openapi.TYPE_STRING, description='New status', enum=['Pending', 'In Progress', 'Completed'], example='In Progress'),
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Status updated successfully",
+                examples={
+                    "application/json": {
+                        "message": "Status updated successfully",
+                        "request": {
+                            "id": 1,
+                            "status": "In Progress"
+                        }
+                    }
+                }
+            ),
+            400: "Bad Request - Invalid status",
+            403: "Forbidden - Admin only",
+            404: "Not Found - Request not found"
+        },
+        tags=['Admin Dashboard']
+    )
     def patch(self, request, request_id=None):
         """Update request status"""
         try:
@@ -50,6 +105,40 @@ class AdminRequestView(APIView):
 class AdminReportView(APIView):
     permission_classes = [permissions.IsAdminUser]
     
+    @swagger_auto_schema(
+        operation_description="Upload or update PDF report for a background check request (Admin only)",
+        operation_summary="Upload Report (Admin)",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['request_id', 'pdf'],
+            properties={
+                'request_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Background check request ID', example=1),
+                'pdf': openapi.Schema(type=openapi.TYPE_FILE, description='PDF report file'),
+                'notes': openapi.Schema(type=openapi.TYPE_STRING, description='Additional notes', example='Background check completed with no issues'),
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Report uploaded successfully",
+                examples={
+                    "application/json": {
+                        "message": "Report uploaded successfully",
+                        "report": {
+                            "id": 1,
+                            "request_id": 1,
+                            "pdf": "/media/reports/report_1.pdf",
+                            "notes": "Background check completed",
+                            "generated_at": "2024-01-20T15:30:00Z"
+                        }
+                    }
+                }
+            ),
+            400: "Bad Request - Missing required fields",
+            403: "Forbidden - Admin only",
+            404: "Not Found - Request not found"
+        },
+        tags=['Admin Dashboard']
+    )
     def post(self, request):
         """Upload or generate PDF report for a background check request"""
         try:
@@ -110,6 +199,28 @@ class AdminReportView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+    @swagger_auto_schema(
+        operation_description="Get all reports (Admin only)",
+        operation_summary="List All Reports (Admin)",
+        responses={
+            200: openapi.Response(
+                description="List of all reports",
+                examples={
+                    "application/json": [
+                        {
+                            "id": 1,
+                            "request_id": 1,
+                            "pdf": "/media/reports/report_1.pdf",
+                            "notes": "Background check completed",
+                            "generated_at": "2024-01-20T15:30:00Z"
+                        }
+                    ]
+                }
+            ),
+            403: "Forbidden - Admin only"
+        },
+        tags=['Admin Dashboard']
+    )
     def get(self, request):
         """Get all reports for admin dashboard"""
         reports = Report.objects.all().order_by('-generated_at')

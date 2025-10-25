@@ -1,27 +1,43 @@
 # Background Check Application
 
-A simplified Django REST API application for managing background check requests.
+A simplified Django REST API application for managing background check requests with comprehensive Swagger/OpenAPI documentation.
 
 ## Features
 
 ### Client Side
-- User registration and authentication
+- User registration and authentication (JWT)
+- OTP verification via Twilio
 - Submit background check requests with personal information
 - Track request status (Pending, In Progress, Completed)
 - Download completed background check reports
+- User profile management with profile pictures
+- Real-time notifications
+- Subscription management with Stripe
 
 ### Admin Side
 - Admin dashboard to view all requests
 - Update request status
 - Upload PDF reports
 - Manage all background check operations
+- Bulk notifications to users
+- Subscription and payment management
+
+### API Documentation
+- **Interactive Swagger UI** with pre-filled test data
+- **ReDoc** for clean documentation reading
+- **30+ documented endpoints** with examples
+- **Instant API testing** without external tools
 
 ## Technology Stack
 - **Backend:** Django 5.2.7
 - **API:** Django REST Framework 3.15.2
 - **Authentication:** JWT (Simple JWT)
-- **Database:** SQLite (development)
-- **File Handling:** Django FileField for PDF uploads
+- **Database:** PostgreSQL (Render.com) / SQLite (development)
+- **File Handling:** Django FileField for uploads
+- **API Documentation:** drf-yasg (Swagger/OpenAPI)
+- **Payment Processing:** Stripe
+- **SMS/OTP:** Twilio
+- **Email:** Gmail SMTP
 
 ## Quick Start
 
@@ -30,24 +46,46 @@ A simplified Django REST API application for managing background check requests.
    pip install -r requirements.txt
    ```
 
-2. **Run Migrations:**
+2. **Set Up Environment Variables:**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your credentials
+   ```
+
+3. **Run Migrations:**
    ```bash
    python manage.py migrate
    ```
 
-3. **Create Superuser (if needed):**
+4. **Create Superuser (if needed):**
    ```bash
    python manage.py createsuperuser
    ```
 
-4. **Start Development Server:**
+5. **Start Development Server:**
    ```bash
    python manage.py runserver
    ```
 
-5. **Access the API:**
-   - API Base URL: `http://127.0.0.1:8000/api/`
-   - Admin Panel: `http://127.0.0.1:8000/admin/`
+6. **Access the Application:**
+   - **Swagger UI:** `http://127.0.0.1:8000/swagger/` ⭐ **Start here!**
+   - **ReDoc:** `http://127.0.0.1:8000/redoc/`
+   - **API Base:** `http://127.0.0.1:8000/api/`
+   - **Admin Panel:** `http://127.0.0.1:8000/admin/`
+
+## 📚 API Documentation
+
+### Quick Test with Swagger
+1. Open http://127.0.0.1:8000/swagger/
+2. All endpoints have **pre-filled test data**
+3. Click "Try it out" on any endpoint
+4. Click "Execute" to test instantly!
+
+### Documentation Files
+- **`SWAGGER_TEST_DATA.md`** - Complete API reference with 30+ examples
+- **`QUICK_TEST_DATA.md`** - Copy-paste ready test data
+- **`SWAGGER_VISUAL_GUIDE.md`** - Visual guide for using Swagger UI
+- **`SWAGGER_IMPLEMENTATION_SUMMARY.md`** - Technical implementation details
 
 ## Default Admin Credentials
 - **Username:** admin
