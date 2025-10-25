@@ -1,4 +1,5 @@
 import random
+import os
 from rest_framework import status, views, permissions
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
@@ -529,15 +530,47 @@ class ResetPasswordView(views.APIView):
     """Reset password with token from email"""
     permission_classes = []  # Allow unauthenticated access
     
+    def get(self, request, uid=None, token=None):
+        """Show password reset form"""
+        from django.shortcuts import render
+        from django.contrib.auth.tokens import default_token_generator
+        from django.utils.http import urlsafe_base64_decode
+        
+        # Get main domain for login link
+        main_domain = os.getenv('MAIN_DOMAIN', 'https://h2o427-backend-u9bx.onrender.com')
+        login_url = f"{main_domain}/api/auth/login/"
+        
+        context = {
+            'uid': uid,
+            'token': token,
+            'login_url': login_url,
+            'error': None,
+            'success': None
+        }
+        
+        # Verify token if provided in URL
+        if uid and token:
+            try:
+                user_id = urlsafe_base64_decode(uid).decode()
+                user = User.objects.get(pk=user_id)
+                
+                if not default_token_generator.check_token(user, token):
+                    context['error'] = 'This password reset link is invalid or has expired. Please request a new one.'
+                    
+            except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+                context['error'] = 'Invalid reset link. Please request a new password reset.'
+        
+        return render(request, 'authentication/reset_password.html', context)
+    
     @swagger_auto_schema(
-        operation_description="Reset password using token from email",
-        operation_summary="Reset Password",
+        operation_description="Reset password using token from email (API endpoint for programmatic access)",
+        operation_summary="Reset Password (API)",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=['uid', 'token', 'new_password', 'confirm_new_password'],
             properties={
-                'uid': openapi.Schema(type=openapi.TYPE_STRING, description='User ID from reset link', example='MQ'),
-                'token': openapi.Schema(type=openapi.TYPE_STRING, description='Token from reset link', example='bn5j7h-8a7d9c1e2f3g4h5i6j7k8l9m0'),
+                'uid': openapi.Schema(type=openapi.TYPE_STRING, description='User ID from reset link', example='NDk'),
+                'token': openapi.Schema(type=openapi.TYPE_STRING, description='Token from reset link', example='cy83ft-0ef9e8a23abb153c18b247d0bc4de37c'),
                 'new_password': openapi.Schema(type=openapi.TYPE_STRING, format='password', description='New password (min 8 characters)', example='NewSecurePass123!'),
                 'confirm_new_password': openapi.Schema(type=openapi.TYPE_STRING, format='password', description='Confirm new password', example='NewSecurePass123!'),
             }
@@ -556,16 +589,66 @@ class ResetPasswordView(views.APIView):
         },
         tags=['Password Reset']
     )
-    def post(self, request):
+    def post(self, request, uid=None, token=None):
         """Reset password with token"""
-        serializer = ResetPasswordSerializer(data=request.data)
+        from django.shortcuts import render, redirect
+        
+        # Get main domain for login link
+        main_domain = os.getenv('MAIN_DOMAIN', 'https://h2o427-backend-u9bx.onrender.com')
+        login_url = f"{main_domain}/api/auth/login/"
+        
+        # Check if it's a form submission (from HTML page) or API request (JSON)
+        is_form_submission = request.content_type == 'application/x-www-form-urlencoded' or \
+                            request.content_type.startswith('multipart/form-data')
+        
+        # Prepare data from either URL params + form or JSON body
+        if uid and token:
+            # Form submission from HTML page
+            data = {
+                'uid': uid,
+                'token': token,
+                'new_password': request.POST.get('new_password') if is_form_submission else request.data.get('new_password'),
+                'confirm_new_password': request.POST.get('confirm_new_password') if is_form_submission else request.data.get('confirm_new_password'),
+            }
+        else:
+            # API request with all data in body
+            data = request.data
+        
+        serializer = ResetPasswordSerializer(data=data)
         
         if serializer.is_valid():
             serializer.save()
+            
+            # If form submission, render success page
+            if is_form_submission:
+                context = {
+                    'success': 'Password reset successfully! You can now login with your new password.',
+                    'login_url': login_url,
+                    'error': None
+                }
+                return render(request, 'authentication/reset_password.html', context)
+            
+            # If API request, return JSON
             return Response({
                 'success': True,
                 'message': 'Password reset successfully. You can now login with your new password.'
             })
+        
+        # Handle errors
+        if is_form_submission:
+            error_messages = []
+            for field, errors in serializer.errors.items():
+                for error in errors:
+                    error_messages.append(f"{field}: {error}")
+            
+            context = {
+                'uid': uid or data.get('uid'),
+                'token': token or data.get('token'),
+                'login_url': login_url,
+                'error': ' | '.join(error_messages),
+                'success': None
+            }
+            return render(request, 'authentication/reset_password.html', context)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

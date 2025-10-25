@@ -205,14 +205,11 @@ class ForgotPasswordSerializer(serializers.Serializer):
         uid = urlsafe_base64_encode(str(user.pk).encode())
         token = default_token_generator.make_token(user)
         
-        # Use main domain for both links (https://h2o427-backend-u9bx.onrender.com)
+        # Use main domain for reset link
         main_domain = os.getenv('MAIN_DOMAIN', 'https://h2o427-backend-u9bx.onrender.com')
         
-        # Frontend reset page URL
-        frontend_url = f"{main_domain}/reset-password/{uid}/{token}/"
-        
-        # API endpoint URL
-        backend_url = f"{main_domain}/api/auth/reset-password/"
+        # Password reset page URL (user clicks this)
+        reset_url = f"{main_domain}/reset-password/{uid}/{token}/"
         
         # Send email
         try:
@@ -224,14 +221,13 @@ Hello {user.full_name or user.username},
 You requested to reset your password for your Background Check System account.
 
 Click the link below to reset your password:
-{frontend_url}
+{reset_url}
 
-Or use this API endpoint directly:
-{backend_url}
+You will be taken to a secure page where you can enter your new password.
 
-This link will expire in 24 hours.
+This link will expire in 24 hours for security reasons.
 
-If you didn't request this, please ignore this email.
+If you didn't request this password reset, please ignore this email and your password will remain unchanged.
 
 Best regards,
 Background Check System Team
