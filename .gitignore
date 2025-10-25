@@ -1,13 +1,98 @@
-# for python
+# Environment variables and secrets
+.env
+.env.*
+.env.local
+.env.development
+.env.test
+.env.production
+*.env
+secrets.json
+config.json
+credentials.json
+
+# Python
 __pycache__/
-*.py[cod]  
+*.py[cod]
 *.pyo
 *.pyd
-*.env
-.env.*
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# Virtual environments
 venv/
 env/
 .venv/
+ENV/
 env.bak/
 venv.bak/
-.env
+.Python
+
+# Django
+*.log
+*.pot
+*.pyc
+db.sqlite3
+db.sqlite3-journal
+/media
+/staticfiles
+/static
+local_settings.py
+
+# Database
+*.sql
+*.sqlite
+*.sqlite3
+*.db
+
+# IDE and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+
+# Security and keys
+*.key
+*.pem
+*.cer
+*.crt
+*.p12
+*.pfx
+id_rsa
+id_rsa.pub
+*.asc
+
+# OS files
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+# Backup files
+*.bak
+*.backup
+*.tmp
+*~
+
+# Compiled files
+*.com
+*.class
+*.dll
+*.exe
+*.o
+*.so
