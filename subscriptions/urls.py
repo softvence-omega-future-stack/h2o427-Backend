@@ -6,12 +6,13 @@ app_name = 'subscriptions'
 urlpatterns = [
     # API endpoints
     path('plans/', views.SubscriptionPlansView.as_view(), name='subscription-plans'),
-    path('subscription/', views.UserSubscriptionView.as_view(), name='user-subscription'),
-    path('subscription/usage/', views.SubscriptionUsageView.as_view(), name='subscription-usage'),
-    path('checkout/create/', views.CreateCheckoutSessionView.as_view(), name='create-checkout'),
-    path('checkout/verify/', views.VerifyCheckoutSessionView.as_view(), name='verify-checkout'),
-    path('payments/', views.PaymentHistoryView.as_view(), name='payment-history'),
-    path('webhooks/stripe/', views.StripeWebhookView.as_view(), name='stripe-webhook'),
+    path('', views.UserSubscriptionView.as_view(), name='user-subscription'),  # GET, POST, PATCH, DELETE /api/subscriptions/
+    path('subscription/', views.UserSubscriptionView.as_view(), name='user-subscription-alt'),  # Alternative path
+    path('usage/', views.SubscriptionUsageView.as_view(), name='subscription-usage'),
+    path('create-checkout-session/', views.CreateCheckoutSessionView.as_view(), name='create-checkout-session'),
+    path('verify-checkout-session/', views.VerifyCheckoutSessionView.as_view(), name='verify-checkout-session'),
+    path('payment-history/', views.PaymentHistoryView.as_view(), name='payment-history'),
+    path('webhook/', views.StripeWebhookView.as_view(), name='stripe-webhook'),
     path('admin/stats/', views.AdminSubscriptionStatsView.as_view(), name='admin-subscription-stats'),
     
     # Template-based views (MVT)
