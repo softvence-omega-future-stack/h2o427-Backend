@@ -187,6 +187,172 @@ class RequestViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+    @swagger_auto_schema(
+        operation_description="View detailed report information for a completed background check",
+        operation_summary="View Report Details",
+        responses={
+            200: openapi.Response(
+                description="Report details retrieved successfully",
+                examples={
+                    "application/json": {
+                        "success": True,
+                        "background_check": {
+                            "id": 1,
+                            "name": "John Doe",
+                            "email": "john@example.com",
+                            "phone_number": "+1234567890",
+                            "dob": "1990-01-15",
+                            "city": "New York",
+                            "state": "NY",
+                            "status": "Completed",
+                            "submitted_date": "2024-01-20T10:30:00Z",
+                            "completed_date": "2024-01-22T14:20:00Z"
+                        },
+                        "report": {
+                            "id": 1,
+                            "generated_at": "2024-01-22T14:20:00Z",
+                            "notes": "Background check completed successfully. No issues found.",
+                            "findings": {
+                                "criminal_records": "No criminal records found",
+                                "verification_status": "Verified"
+                            }
+                        },
+                        "download": {
+                            "pdf_url": "http://localhost:8000/media/reports/report_1.pdf",
+                            "filename": "report_1.pdf",
+                            "file_size": "1.5 MB",
+                            "expires_in": "7 days"
+                        }
+                    }
+                }
+            ),
+            404: "Report not found or not completed yet",
+            403: "Not authorized to view this report"
+        },
+        tags=['Background Check Reports']
+    )
+    @action(detail=True, methods=['get'], url_path='view-report', url_name='view-report')
+    def view_report(self, request, pk=None):
+        """View detailed report information for a completed background check"""
+        try:
+            bg_request = self.get_object()
+            
+            # Check if request belongs to user (unless admin)
+            if not request.user.is_staff and bg_request.user != request.user:
+                return Response(
+                    {
+                        'error': 'Permission denied',
+                        'message': 'You can only view your own background check reports.'
+                    },
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Check if background check is completed
+            if bg_request.status != 'Completed':
+                return Response(
+                    {
+                        'error': 'Report not available',
+                        'message': f'Background check is currently "{bg_request.status}". Report will be available once completed.',
+                        'current_status': bg_request.status,
+                        'request_id': bg_request.id
+                    },
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Check if report exists
+            if not hasattr(bg_request, 'report'):
+                return Response(
+                    {
+                        'error': 'Report not found',
+                        'message': 'Background check is marked as completed but report has not been generated yet.',
+                        'status': bg_request.status
+                    },
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            report = bg_request.report
+            
+            # Check if PDF exists
+            has_pdf = False
+            pdf_url = None
+            filename = None
+            file_size = None
+            
+            try:
+                if report.pdf and report.pdf.name:
+                    has_pdf = True
+                    pdf_url = request.build_absolute_uri(report.pdf.url)
+                    filename = report.pdf.name.split('/')[-1]
+                    if report.pdf.size:
+                        if report.pdf.size < 1024:
+                            file_size = f"{report.pdf.size} bytes"
+                        elif report.pdf.size < 1024 * 1024:
+                            file_size = f"{report.pdf.size / 1024:.1f} KB"
+                        else:
+                            file_size = f"{report.pdf.size / (1024 * 1024):.2f} MB"
+            except Exception:
+                pass
+            
+            # Build comprehensive response
+            response_data = {
+                'success': True,
+                'background_check': {
+                    'id': bg_request.id,
+                    'subject_name': bg_request.name,
+                    'subject_email': bg_request.email,
+                    'subject_phone': bg_request.phone_number,
+                    'date_of_birth': str(bg_request.dob) if bg_request.dob else None,
+                    'city': bg_request.city,
+                    'state': bg_request.state,
+                    'status': bg_request.status,
+                    'submitted_date': bg_request.created_at.isoformat() if bg_request.created_at else None,
+                    'completed_date': bg_request.updated_at.isoformat() if bg_request.updated_at else None,
+                },
+                'report': {
+                    'id': report.id,
+                    'generated_at': report.generated_at.isoformat() if report.generated_at else None,
+                    'notes': report.notes or 'No additional notes',
+                    'summary': {
+                        'verification_status': 'Completed',
+                        'report_type': 'Background Check Report',
+                        'details': report.notes or 'Background check completed successfully.'
+                    }
+                },
+                'download': {
+                    'available': has_pdf,
+                    'pdf_url': pdf_url,
+                    'filename': filename,
+                    'file_size': file_size or 'Unknown',
+                    'download_endpoint': f"/api/requests/{bg_request.id}/download-report/",
+                    'note': 'Use the download endpoint or pdf_url to download the full report'
+                },
+                'requestor': {
+                    'id': bg_request.user.id,
+                    'username': bg_request.user.username,
+                    'email': bg_request.user.email
+                }
+            }
+            
+            return Response(response_data)
+            
+        except Request.DoesNotExist:
+            return Response(
+                {
+                    'error': 'Background check request not found',
+                    'message': 'The requested background check does not exist.'
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {
+                    'error': 'An error occurred',
+                    'message': 'Failed to retrieve report details.',
+                    'details': str(e)
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
     @action(detail=True, methods=['get', 'patch'], permission_classes=[permissions.IsAdminUser], url_path='update-status', url_name='update-status')
     def update_status(self, request, pk=None):
         """Update request status (admin only)"""
@@ -233,6 +399,132 @@ class RequestViewSet(viewsets.ModelViewSet):
             'in_progress': in_progress,
             'completed': completed,
             'completion_rate': f"{(completed/total*100):.1f}%" if total > 0 else "0%"
+        })
+
+    @swagger_auto_schema(
+        operation_description="Get user's background check requests dashboard with status tracking",
+        operation_summary="User Dashboard - My Requests",
+        responses={
+            200: openapi.Response(
+                description="User dashboard with all requests",
+                examples={
+                    "application/json": {
+                        "user": {
+                            "id": 1,
+                            "name": "John Doe",
+                            "email": "john@example.com"
+                        },
+                        "subscription": {
+                            "plan_name": "Premium Plan",
+                            "requests_used": 5,
+                            "requests_limit": 50,
+                            "requests_remaining": 45,
+                            "status": "active"
+                        },
+                        "requests_summary": {
+                            "total": 5,
+                            "pending": 1,
+                            "in_progress": 2,
+                            "completed": 2
+                        },
+                        "requests": [
+                            {
+                                "id": 1,
+                                "name": "Jane Smith",
+                                "email": "jane@example.com",
+                                "status": "Completed",
+                                "created_at": "2024-01-20T10:30:00Z",
+                                "updated_at": "2024-01-22T14:20:00Z",
+                                "has_report": True,
+                                "report_download_url": "/api/requests/1/download-report/"
+                            }
+                        ]
+                    }
+                }
+            ),
+            401: "Unauthorized - Authentication required"
+        },
+        tags=['User Dashboard']
+    )
+    @action(detail=False, methods=['get'], url_path='my-dashboard', url_name='my-dashboard')
+    def my_dashboard(self, request):
+        """Get user's dashboard with all their requests and subscription info"""
+        user = request.user
+        
+        # Get user's requests
+        user_requests = Request.objects.filter(user=user).order_by('-created_at')
+        
+        # Get subscription info
+        subscription_data = None
+        try:
+            subscription = UserSubscription.objects.get(user=user)
+            subscription_data = {
+                'plan_name': subscription.plan.name,
+                'plan_price': str(subscription.plan.price),
+                'billing_cycle': subscription.plan.billing_cycle,
+                'requests_used': subscription.requests_used_this_month,
+                'requests_limit': subscription.plan.max_requests_per_month,
+                'requests_remaining': subscription.remaining_requests,
+                'status': subscription.status,
+                'start_date': subscription.start_date.isoformat() if subscription.start_date else None,
+                'end_date': subscription.end_date.isoformat() if subscription.end_date else None,
+                'can_make_request': subscription.can_make_request
+            }
+        except UserSubscription.DoesNotExist:
+            subscription_data = {
+                'plan_name': None,
+                'status': 'inactive',
+                'message': 'No active subscription. Please subscribe to a plan.',
+                'plans_url': '/api/subscriptions/plans/'
+            }
+        
+        # Summary statistics
+        requests_summary = {
+            'total': user_requests.count(),
+            'pending': user_requests.filter(status='Pending').count(),
+            'in_progress': user_requests.filter(status='In Progress').count(),
+            'completed': user_requests.filter(status='Completed').count()
+        }
+        
+        # Serialize requests with report info
+        requests_data = []
+        for req in user_requests:
+            # Check if report exists and has a PDF file (without reading the file content)
+            has_report = False
+            try:
+                if hasattr(req, 'report') and req.report.pdf and req.report.pdf.name:
+                    has_report = True
+            except Exception:
+                has_report = False
+            
+            request_data = {
+                'id': req.id,
+                'name': req.name,
+                'email': req.email,
+                'phone_number': req.phone_number,
+                'dob': str(req.dob) if req.dob else None,  # Convert date to string
+                'city': req.city,
+                'state': req.state,
+                'status': req.status,
+                'created_at': req.created_at,
+                'updated_at': req.updated_at,
+                'has_report': has_report,
+                'report_download_url': f"/api/requests/{req.id}/download-report/" if has_report else None,
+            }
+            requests_data.append(request_data)
+        
+        return Response({
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'name': user.full_name or user.username,
+                'email': user.email,
+                'phone_number': user.phone_number
+            },
+            'subscription': subscription_data,
+            'requests_summary': requests_summary,
+            'requests': requests_data,
+            'message': 'Dashboard data retrieved successfully'
         })
 
 class ReportViewSet(viewsets.ModelViewSet):

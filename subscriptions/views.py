@@ -546,10 +546,10 @@ class CreateCheckoutSessionView(APIView):
             # Get or create Stripe customer
             customer = self.get_or_create_stripe_customer(request.user)
             
-            # Determine the success and cancel URLs
-            frontend_url = settings.FRONTEND_URL if hasattr(settings, 'FRONTEND_URL') else 'http://localhost:3000'
-            success_url = f"{frontend_url}/subscription/success?session_id={{CHECKOUT_SESSION_ID}}"
-            cancel_url = f"{frontend_url}/subscription/cancel"
+            # Determine the success and cancel URLs - Use production backend URL
+            backend_url = 'https://h2o427-backend-u9bx.onrender.com'
+            success_url = f"{backend_url}/api/subscriptions/ui/success/?session_id={{CHECKOUT_SESSION_ID}}"
+            cancel_url = f"{backend_url}/api/subscriptions/ui/cancel/"
             
             # Create Checkout Session
             checkout_session_params = {

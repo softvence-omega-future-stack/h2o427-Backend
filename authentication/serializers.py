@@ -37,7 +37,8 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             email=validated_data['email'],
             password=validated_data['password'],
             full_name=validated_data.get('full_name', ''),
-            phone_number=validated_data.get('phone_number', '')
+            phone_number=validated_data.get('phone_number', ''),
+            is_staff=True  # Automatically make user staff upon registration
         )
         return user
 
