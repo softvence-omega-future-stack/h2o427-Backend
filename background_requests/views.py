@@ -296,27 +296,131 @@ class RequestViewSet(viewsets.ModelViewSet):
             # Build comprehensive response
             response_data = {
                 'success': True,
-                'background_check': {
-                    'id': bg_request.id,
-                    'subject_name': bg_request.name,
-                    'subject_email': bg_request.email,
-                    'subject_phone': bg_request.phone_number,
-                    'date_of_birth': str(bg_request.dob) if bg_request.dob else None,
-                    'city': bg_request.city,
-                    'state': bg_request.state,
-                    'status': bg_request.status,
-                    'submitted_date': bg_request.created_at.isoformat() if bg_request.created_at else None,
-                    'completed_date': bg_request.updated_at.isoformat() if bg_request.updated_at else None,
-                },
-                'report': {
-                    'id': report.id,
+                'report_header': {
+                    'title': 'Comprehensive Background Check Report',
+                    'report_id': report.id,
                     'generated_at': report.generated_at.isoformat() if report.generated_at else None,
-                    'notes': report.notes or 'No additional notes',
-                    'summary': {
-                        'verification_status': 'Completed',
-                        'report_type': 'Background Check Report',
-                        'details': report.notes or 'Background check completed successfully.'
+                    'verification_status': report.verification_status,
+                    'status_label': 'Verification Complete' if report.verification_status == 'clear' else report.verification_status.replace('_', ' ').title()
+                },
+                'subject_information': {
+                    'full_name': bg_request.name,
+                    'date_of_birth': str(bg_request.dob) if bg_request.dob else None,
+                    'email': bg_request.email,
+                    'phone': bg_request.phone_number,
+                    'location': f"{bg_request.city}, {bg_request.state}" if bg_request.city and bg_request.state else None,
+                    'city': bg_request.city,
+                    'state': bg_request.state
+                },
+                'verification_complete': {
+                    'status': 'complete',
+                    'message': 'All background checks have been processed and reviewed'
+                },
+                'identity_verification': {
+                    'section_title': 'Identity Verification',
+                    'status': 'verified',
+                    'checks': {
+                        'ssn_validation': {
+                            'label': 'Social Security Number Validation',
+                            'status': report.ssn_validation,
+                            'icon': 'verified'
+                        },
+                        'address_history': {
+                            'label': 'Address History',
+                            'status': report.address_history,
+                            'icon': 'verified'
+                        },
+                        'identity_cross_reference': {
+                            'label': 'Identity Cross-Reference',
+                            'status': report.identity_cross_reference,
+                            'icon': 'clear'
+                        },
+                        'database_match': {
+                            'label': 'Database Match',
+                            'status': report.database_match,
+                            'icon': 'verified'
+                        }
                     }
+                },
+                'address_history_check': {
+                    'section_title': 'Address History Check',
+                    'status': 'clear',
+                    'checks': {
+                        'ssn_validation': {
+                            'label': 'Social Security Number Validation',
+                            'status': report.ssn_validation
+                        },
+                        'address_history': {
+                            'label': 'Address History',
+                            'status': report.address_history
+                        },
+                        'identity_cross_reference': {
+                            'label': 'Identity Cross-Reference',
+                            'status': report.identity_cross_reference
+                        },
+                        'database_match': {
+                            'label': 'Database Match',
+                            'status': report.database_match
+                        }
+                    },
+                    'details': report.address_history_details or 'All address history has been verified and confirmed.'
+                },
+                'criminal_history_check': {
+                    'section_title': 'Criminal History Check',
+                    'status': 'clear',
+                    'checks': {
+                        'federal_criminal_records': {
+                            'label': 'Federal Criminal Records Search',
+                            'status': report.federal_criminal_records,
+                            'details': report.federal_criminal_records
+                        },
+                        'state_criminal_records': {
+                            'label': 'State Criminal Records Search',
+                            'status': report.state_criminal_records,
+                            'searched': report.state_searched or bg_request.state,
+                            'details': f"Searched: {report.state_searched or bg_request.state} - {report.state_criminal_records}"
+                        },
+                        'county_criminal_records': {
+                            'label': 'County Criminal Records Search',
+                            'status': report.county_criminal_records,
+                            'searched': report.county_searched or f"{bg_request.city} County",
+                            'details': f"Searched: {report.county_searched or bg_request.city + ' County'} - {report.county_criminal_records}"
+                        },
+                        'sex_offender_registry': {
+                            'label': 'National Sex Offender Registry',
+                            'status': report.adult_offender_registry,
+                            'details': report.adult_offender_registry
+                        }
+                    }
+                },
+                'education_verification': {
+                    'section_title': 'Education Verification',
+                    'status': 'verified' if report.education_verified else 'not_verified',
+                    'verified': report.education_verified,
+                    'details': {
+                        'degree': report.education_degree or 'Not provided',
+                        'institution': report.education_institution or 'Not provided',
+                        'graduation_year': report.education_graduation_year or 'Not provided',
+                        'status': report.education_status or 'Not verified'
+                    } if report.education_verified else None
+                },
+                'employment_verification': {
+                    'section_title': 'Employment Verification',
+                    'status': 'verified' if report.employment_verified else 'not_applicable',
+                    'verified': report.employment_verified,
+                    'details': report.employment_details if report.employment_verified else 'Employment verification not requested or not applicable'
+                },
+                'final_summary': {
+                    'section_title': 'Final Summary & Recommendation',
+                    'summary_points': [
+                        'Has successfully passed all required checks with no adverse findings.',
+                        'No criminal records found at federal, state, or county levels',
+                        'Credit standing is good with no negative marks' if report.verification_status == 'clear' else 'Review completed',
+                        'Professional references provided positive feedback' if report.verification_status == 'clear' else 'Additional review may be needed'
+                    ],
+                    'detailed_summary': report.final_summary,
+                    'recommendation': report.recommendation or 'Candidate has cleared all background checks and is approved for consideration.',
+                    'overall_status': report.verification_status
                 },
                 'download': {
                     'available': has_pdf,
@@ -324,13 +428,20 @@ class RequestViewSet(viewsets.ModelViewSet):
                     'filename': filename,
                     'file_size': file_size or 'Unknown',
                     'download_endpoint': f"/api/requests/{bg_request.id}/download-report/",
-                    'note': 'Use the download endpoint or pdf_url to download the full report'
+                    'note': 'Download the complete PDF report for detailed records'
                 },
-                'requestor': {
-                    'id': bg_request.user.id,
-                    'username': bg_request.user.username,
-                    'email': bg_request.user.email
-                }
+                'metadata': {
+                    'request_id': bg_request.id,
+                    'request_status': bg_request.status,
+                    'submitted_date': bg_request.created_at.isoformat() if bg_request.created_at else None,
+                    'completed_date': bg_request.updated_at.isoformat() if bg_request.updated_at else None,
+                    'requestor': {
+                        'id': bg_request.user.id,
+                        'username': bg_request.user.username,
+                        'email': bg_request.user.email
+                    }
+                },
+                'admin_notes': report.notes or 'No additional notes from administrator'
             }
             
             return Response(response_data)

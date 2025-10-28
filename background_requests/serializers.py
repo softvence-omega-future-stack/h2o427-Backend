@@ -169,3 +169,50 @@ class ReportCreateSerializer(serializers.ModelSerializer):
             }
         }
 
+class DetailedReportSerializer(serializers.ModelSerializer):
+    """Comprehensive serializer for detailed report view with all verification fields"""
+    request_name = serializers.CharField(source='request.name', read_only=True)
+    request_email = serializers.CharField(source='request.email', read_only=True)
+    request_phone = serializers.CharField(source='request.phone_number', read_only=True)
+    request_dob = serializers.DateField(source='request.dob', read_only=True)
+    request_city = serializers.CharField(source='request.city', read_only=True)
+    request_state = serializers.CharField(source='request.state', read_only=True)
+    request_status = serializers.CharField(source='request.status', read_only=True)
+    file_size = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Report
+        fields = [
+            # Basic report info
+            'id', 'generated_at', 'notes', 'pdf', 'file_size',
+            # Request subject info
+            'request_name', 'request_email', 'request_phone', 'request_dob',
+            'request_city', 'request_state', 'request_status',
+            # Identity Verification
+            'ssn_validation', 'address_history', 'identity_cross_reference', 'database_match',
+            # Criminal History
+            'federal_criminal_records', 'state_criminal_records', 'county_criminal_records',
+            'sex_offender_registry', 'state_searched', 'county_searched',
+            # Address History
+            'address_history_details',
+            # Education Verification
+            'education_verified', 'education_degree', 'education_institution',
+            'education_graduation_year', 'education_status',
+            # Employment Verification
+            'employment_verified', 'employment_details',
+            # Final Summary
+            'final_summary', 'recommendation', 'verification_status'
+        ]
+        read_only_fields = fields
+
+    def get_file_size(self, obj):
+        if obj.pdf and hasattr(obj.pdf, 'size'):
+            size = obj.pdf.size
+            if size < 1024:
+                return f"{size} bytes"
+            elif size < 1024 * 1024:
+                return f"{size / 1024:.1f} KB"
+            else:
+                return f"{size / (1024 * 1024):.1f} MB"
+        return "No file"
+
