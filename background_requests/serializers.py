@@ -192,7 +192,7 @@ class DetailedReportSerializer(serializers.ModelSerializer):
             'ssn_validation', 'address_history', 'identity_cross_reference', 'database_match',
             # Criminal History
             'federal_criminal_records', 'state_criminal_records', 'county_criminal_records',
-            'sex_offender_registry', 'state_searched', 'county_searched',
+            'adult_offender_registry', 'state_searched', 'county_searched',
             # Address History
             'address_history_details',
             # Education Verification
@@ -215,4 +215,58 @@ class DetailedReportSerializer(serializers.ModelSerializer):
             else:
                 return f"{size / (1024 * 1024):.1f} MB"
         return "No file"
+
+
+class AdminReportFormSerializer(serializers.ModelSerializer):
+    """Admin serializer for creating/updating complete background check reports"""
+    
+    class Meta:
+        model = Report
+        fields = [
+            'request', 'pdf', 'notes',
+            # Identity Verification
+            'ssn_validation', 'address_history', 'identity_cross_reference', 'database_match',
+            # Criminal History
+            'federal_criminal_records', 'state_criminal_records', 'county_criminal_records',
+            'adult_offender_registry', 'state_searched', 'county_searched',
+            # Address History
+            'address_history_details',
+            # Education Verification
+            'education_verified', 'education_degree', 'education_institution',
+            'education_graduation_year', 'education_status',
+            # Employment Verification
+            'employment_verified', 'employment_details',
+            # Final Summary
+            'final_summary', 'recommendation', 'verification_status'
+        ]
+        extra_kwargs = {
+            'request': {'required': True},
+            'pdf': {'required': False, 'allow_null': True},
+        }
+
+    def validate(self, data):
+        # If education is verified, require degree and institution
+        if data.get('education_verified'):
+            if not data.get('education_degree') or not data.get('education_institution'):
+                raise serializers.ValidationError(
+                    "Education degree and institution are required when education is verified"
+                )
+        return data
+
+    def create(self, validated_data):
+        # Get the request and update its status to Completed
+        request_obj = validated_data.get('request')
+        request_obj.status = 'Completed'
+        request_obj.save()
+        
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        # Update the request status if report is being updated
+        if 'request' in validated_data:
+            request_obj = validated_data.get('request')
+            request_obj.status = 'Completed'
+            request_obj.save()
+        
+        return super().update(instance, validated_data)
 

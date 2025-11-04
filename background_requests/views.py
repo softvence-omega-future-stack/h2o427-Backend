@@ -4,6 +4,7 @@ from rest_framework.decorators import action
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
+from django.utils import timezone
 from .models import Request, Report
 from .serializers import (
     RequestSerializer, RequestCreateSerializer, RequestListSerializer, 
@@ -636,6 +637,143 @@ class RequestViewSet(viewsets.ModelViewSet):
             'requests_summary': requests_summary,
             'requests': requests_data,
             'message': 'Dashboard data retrieved successfully'
+        })
+
+    @action(detail=True, methods=['get'], permission_classes=[permissions.IsAdminUser], url_path='admin-report-form', url_name='admin-report-form')
+    def get_admin_report_form(self, request, pk=None):
+        """Get request details and existing report data for admin form"""
+        try:
+            bg_request = self.get_object()
+            
+            # Get existing report if it exists
+            report_data = None
+            if hasattr(bg_request, 'report'):
+                from .serializers import AdminReportFormSerializer
+                report_data = AdminReportFormSerializer(bg_request.report).data
+            
+            return Response({
+                'success': True,
+                'request': {
+                    'id': bg_request.id,
+                    'name': bg_request.name,
+                    'dob': str(bg_request.dob),
+                    'email': bg_request.email,
+                    'phone_number': bg_request.phone_number,
+                    'city': bg_request.city,
+                    'state': bg_request.state,
+                    'status': bg_request.status,
+                    'created_at': bg_request.created_at.isoformat(),
+                    'user': {
+                        'id': bg_request.user.id,
+                        'username': bg_request.user.username,
+                        'email': bg_request.user.email
+                    }
+                },
+                'existing_report': report_data,
+                'has_report': hasattr(bg_request, 'report'),
+                'form_sections': {
+                    'identity_verification': ['ssn_validation', 'address_history', 'identity_cross_reference', 'database_match'],
+                    'criminal_history': ['federal_criminal_records', 'state_criminal_records', 'state_searched', 
+                                       'county_criminal_records', 'county_searched', 'adult_offender_registry'],
+                    'address_history': ['address_history_details'],
+                    'education_verification': ['education_verified', 'education_degree', 'education_institution', 
+                                              'education_graduation_year', 'education_status'],
+                    'employment_verification': ['employment_verified', 'employment_details'],
+                    'final_summary': ['final_summary', 'recommendation', 'verification_status']
+                }
+            })
+        except Request.DoesNotExist:
+            return Response(
+                {'error': 'Request not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @action(detail=True, methods=['post', 'put'], permission_classes=[permissions.IsAdminUser], url_path='submit-report', url_name='submit-report')
+    def submit_admin_report(self, request, pk=None):
+        """Submit or update complete background check report from admin"""
+        try:
+            bg_request = self.get_object()
+            from .serializers import AdminReportFormSerializer
+            
+            # Check if report already exists
+            if hasattr(bg_request, 'report'):
+                # Update existing report
+                serializer = AdminReportFormSerializer(
+                    bg_request.report, 
+                    data=request.data, 
+                    partial=True
+                )
+            else:
+                # Create new report
+                # Add request to data
+                data = request.data.copy()
+                data['request'] = bg_request.id
+                serializer = AdminReportFormSerializer(data=data)
+            
+            if serializer.is_valid():
+                report = serializer.save()
+                
+                # Update request status to Completed
+                bg_request.status = 'Completed'
+                bg_request.save()
+                
+                return Response({
+                    'success': True,
+                    'message': 'Background check report submitted successfully',
+                    'report_id': report.id,
+                    'request_status': bg_request.status,
+                    'report': AdminReportFormSerializer(report).data
+                }, status=status.HTTP_201_CREATED if not hasattr(bg_request, 'report') else status.HTTP_200_OK)
+            
+            return Response({
+                'success': False,
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+        except Request.DoesNotExist:
+            return Response(
+                {'error': 'Request not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAdminUser], url_path='pending-reports', url_name='pending-reports')
+    def get_pending_reports(self, request):
+        """Get all requests that need reports to be filled out"""
+        pending_requests = Request.objects.filter(
+            status__in=['Pending', 'In Progress']
+        ).exclude(
+            report__isnull=False
+        ).order_by('-created_at')
+        
+        requests_data = []
+        for req in pending_requests:
+            requests_data.append({
+                'id': req.id,
+                'name': req.name,
+                'email': req.email,
+                'phone_number': req.phone_number,
+                'dob': str(req.dob),
+                'city': req.city,
+                'state': req.state,
+                'status': req.status,
+                'created_at': req.created_at.isoformat(),
+                'days_pending': (timezone.now() - req.created_at).days,
+                'user': {
+                    'username': req.user.username,
+                    'email': req.user.email
+                },
+                'form_url': f'/api/requests/api/{req.id}/admin-report-form/'
+            })
+        
+        return Response({
+            'success': True,
+            'count': len(requests_data),
+            'requests': requests_data
         })
 
 class ReportViewSet(viewsets.ModelViewSet):
