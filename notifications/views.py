@@ -7,12 +7,13 @@ from django.contrib.auth import get_user_model
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
-from .models import Notification
+from .models import Notification, FCMDevice
 from .serializers import (
     NotificationSerializer,
     NotificationCreateSerializer,
     BulkNotificationCreateSerializer,
-    NotificationMarkReadSerializer
+    NotificationMarkReadSerializer,
+    FCMDeviceSerializer
 )
 
 User = get_user_model()
@@ -366,5 +367,91 @@ class NotificationViewSet(viewsets.ModelViewSet):
         
         return Response({
             'message': f'Successfully deleted {count} read notifications',
+            'count': count
+        }, status=status.HTTP_200_OK)
+
+
+class FCMDeviceViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing FCM device tokens
+    
+    Provides endpoints for:
+    - Register device token
+    - Update device token  
+    - List user's devices
+    - Delete device token
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = FCMDeviceSerializer
+    
+    def get_queryset(self):
+        """Return only the authenticated user's devices"""
+        if getattr(self, 'swagger_fake_view', False):
+            return FCMDevice.objects.none()
+        return FCMDevice.objects.filter(user=self.request.user)
+    
+    @swagger_auto_schema(
+        operation_description="Register or update FCM device token for push notifications",
+        request_body=FCMDeviceSerializer,
+        responses={
+            201: FCMDeviceSerializer,
+            400: 'Bad Request'
+        }
+    )
+    def create(self, request, *args, **kwargs):
+        """
+        Register a new FCM device token
+        
+        If token already exists for this user, it will be updated.
+        """
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        device = serializer.save()
+        
+        return Response(
+            FCMDeviceSerializer(device).data,
+            status=status.HTTP_201_CREATED
+        )
+    
+    @swagger_auto_schema(
+        operation_description="Get all FCM devices registered for the authenticated user",
+        responses={200: FCMDeviceSerializer(many=True)}
+    )
+    def list(self, request, *args, **kwargs):
+        """List all devices for the authenticated user"""
+        return super().list(request, *args, **kwargs)
+    
+    @swagger_auto_schema(
+        operation_description="Delete FCM device token (unregister device)",
+        responses={
+            204: 'Device token deleted successfully',
+            404: 'Device not found'
+        }
+    )
+    def destroy(self, request, *args, **kwargs):
+        """Delete a device token (unregister)"""
+        return super().destroy(request, *args, **kwargs)
+    
+    @swagger_auto_schema(
+        operation_description="Deactivate all devices for the authenticated user",
+        responses={
+            200: openapi.Response(
+                description="All devices deactivated",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    }
+                )
+            )
+        }
+    )
+    @action(detail=False, methods=['post'], url_path='deactivate-all')
+    def deactivate_all(self, request):
+        """Deactivate all devices for the current user"""
+        count = self.get_queryset().filter(active=True).update(active=False)
+        return Response({
+            'message': f'Successfully deactivated {count} devices',
             'count': count
         }, status=status.HTTP_200_OK)

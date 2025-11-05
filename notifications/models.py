@@ -5,6 +5,26 @@ from django.utils import timezone
 User = get_user_model()
 
 
+class FCMDevice(models.Model):
+    """Store FCM device tokens for push notifications"""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='fcm_devices')
+    registration_token = models.CharField(max_length=255, unique=True)
+    device_type = models.CharField(
+        max_length=10,
+        choices=[('android', 'Android'), ('ios', 'iOS'), ('web', 'Web')],
+        default='web'
+    )
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ['user', 'registration_token']
+    
+    def __str__(self):
+        return f"{self.user.username} - {self.device_type}"
+
+
 class Notification(models.Model):
     """
     Notification model for bidirectional communication between admin and users
@@ -92,6 +112,11 @@ class Notification(models.Model):
         null=True,
         help_text='URL for action button in notification'
     )
+    
+    # Push notification tracking
+    push_sent = models.BooleanField(default=False, help_text='Whether push notification was sent')
+    push_sent_at = models.DateTimeField(null=True, blank=True, help_text='When push notification was sent')
+    push_error = models.TextField(blank=True, null=True, help_text='Error message if push failed')
     
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)

@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Notification
+from .models import Notification, FCMDevice
 
 User = get_user_model()
 
@@ -171,3 +171,44 @@ class NotificationMarkReadSerializer(serializers.Serializer):
         help_text='List of notification IDs to mark (if not provided, marks all)'
     )
     is_read = serializers.BooleanField(default=True)
+
+
+class FCMDeviceSerializer(serializers.ModelSerializer):
+    """Serializer for FCM device token registration"""
+    
+    class Meta:
+        model = FCMDevice
+        fields = ['id', 'registration_token', 'device_type', 'active', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'user', 'created_at', 'updated_at']
+    
+    def validate_registration_token(self, value):
+        """Validate that token is not empty"""
+        if not value or not value.strip():
+            raise serializers.ValidationError("Registration token cannot be empty")
+        return value.strip()
+    
+    def create(self, validated_data):
+        """Create or update FCM device token for the authenticated user"""
+        user = self.context['request'].user
+        token = validated_data['registration_token']
+        device_type = validated_data.get('device_type', 'web')
+        
+        # Check if token already exists for this user
+        device, created = FCMDevice.objects.update_or_create(
+            user=user,
+            registration_token=token,
+            defaults={
+                'device_type': device_type,
+                'active': True
+            }
+        )
+        
+        return device
+    
+    def update(self, instance, validated_data):
+        """Update FCM device token"""
+        instance.registration_token = validated_data.get('registration_token', instance.registration_token)
+        instance.device_type = validated_data.get('device_type', instance.device_type)
+        instance.active = validated_data.get('active', instance.active)
+        instance.save()
+        return instance
