@@ -244,5 +244,20 @@ FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')  # Set this to
 # Firebase Cloud Messaging (FCM) settings
 FIREBASE_CREDENTIALS_PATH = os.getenv('FIREBASE_CREDENTIALS_PATH', BASE_DIR / 'firebase-credentials.json')
 
+# Firebase configuration from environment variables
+FIREBASE_CONFIG = {
+    'type': os.getenv('type', 'service_account'),
+    'project_id': os.getenv('project_id', 'h2o427-918db'),
+    'private_key_id': os.getenv('private_key_id'),
+    'private_key': os.getenv('private_key', '').replace('\\n', '\n') if os.getenv('private_key') else None,
+    'client_email': os.getenv('client_email'),
+    'client_id': os.getenv('client_id'),
+    'auth_uri': os.getenv('auth_uri', 'https://accounts.google.com/o/oauth2/auth'),
+    'token_uri': os.getenv('token_uri', 'https://oauth2.googleapis.com/token'),
+    'auth_provider_x509_cert_url': os.getenv('auth_provider_x509_cert_url', 'https://www.googleapis.com/oauth2/v1/certs'),
+    'client_x509_cert_url': os.getenv('client_x509_cert_url'),
+    'universe_domain': os.getenv('universe_domain', 'googleapis.com')
+}
+
 
 

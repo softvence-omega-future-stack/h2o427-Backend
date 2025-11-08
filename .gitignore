@@ -9,6 +9,7 @@
 secrets.json
 config.json
 credentials.json
+firebase-credentials.json
 
 # Python
 __pycache__/
