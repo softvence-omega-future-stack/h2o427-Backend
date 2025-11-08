@@ -12,6 +12,8 @@ from .serializers import (
     StatusUpdateSerializer, BulkStatusUpdateSerializer, DashboardStatsSerializer,
     AdminUserSerializer
 )
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 
 User = get_user_model()
 
@@ -19,6 +21,16 @@ class AdminDashboardStatsView(APIView):
     """View for dashboard statistics and overview"""
     permission_classes = [permissions.IsAdminUser]
     
+    @swagger_auto_schema(
+        operation_summary="Get Dashboard Statistics",
+        operation_description="Get system overview including total requests, pending/in-progress/completed counts, total clients, recent requests and activities.",
+        operation_id="admin_dashboard_stats",
+        tags=['Admin - Dashboard'],
+        responses={
+            200: DashboardStatsSerializer,
+            403: "Forbidden - Admin access required"
+        }
+    )
     def get(self, request):
         # Get counts
         total_requests = Request.objects.count()
@@ -50,6 +62,21 @@ class AdminRequestManagementView(APIView):
     """Enhanced request management with filtering and bulk operations"""
     permission_classes = [permissions.IsAdminUser]
     
+    @swagger_auto_schema(
+        operation_summary="Manage All Requests",
+        operation_description="Get all background check requests with optional filtering by status, assigned admin, or search query.",
+        operation_id="admin_requests_list",
+        tags=['Admin - Request Management'],
+        manual_parameters=[
+            openapi.Parameter('status', openapi.IN_QUERY, description="Filter by status (Pending, In Progress, Completed)", type=openapi.TYPE_STRING),
+            openapi.Parameter('assigned_to', openapi.IN_QUERY, description="Filter by assigned admin user ID", type=openapi.TYPE_INTEGER),
+            openapi.Parameter('search', openapi.IN_QUERY, description="Search by name, email, or username", type=openapi.TYPE_STRING),
+        ],
+        responses={
+            200: AdminRequestSerializer(many=True),
+            403: "Forbidden - Admin access required"
+        }
+    )
     def get(self, request):
         # Get query parameters for filtering
         status_filter = request.query_params.get('status', None)
@@ -79,6 +106,27 @@ class AdminRequestDetailView(APIView):
     """Detailed view for individual requests with activities and notes"""
     permission_classes = [permissions.IsAdminUser]
     
+    @swagger_auto_schema(
+        operation_summary="Get Request Details",
+        operation_description="Get detailed information for a specific request including activities, notes, and assignment.",
+        operation_id="admin_request_detail",
+        tags=['Admin - Request Management'],
+        responses={
+            200: openapi.Response(
+                description="Request details with activities and notes",
+                examples={
+                    "application/json": {
+                        "request": {"id": 1, "name": "John Doe", "status": "Pending"},
+                        "activities": [],
+                        "notes": [],
+                        "assignment": None
+                    }
+                }
+            ),
+            404: "Request not found",
+            403: "Forbidden - Admin access required"
+        }
+    )
     def get(self, request, request_id):
         try:
             bg_request = Request.objects.get(id=request_id)
@@ -113,6 +161,19 @@ class AdminStatusUpdateView(APIView):
     """Update request status with activity logging"""
     permission_classes = [permissions.IsAdminUser]
     
+    @swagger_auto_schema(
+        operation_summary="Update Request Status",
+        operation_description="Change the status of a background check request. Automatically logs the activity and optionally adds admin notes.",
+        operation_id="admin_request_update_status",
+        tags=['Admin - Request Management'],
+        request_body=StatusUpdateSerializer,
+        responses={
+            200: AdminRequestSerializer,
+            400: "Bad Request - Invalid status",
+            404: "Request not found",
+            403: "Forbidden - Admin access required"
+        }
+    )
     def patch(self, request, request_id):
         try:
             bg_request = Request.objects.get(id=request_id)
@@ -160,6 +221,26 @@ class AdminBulkStatusUpdateView(APIView):
     """Bulk update request statuses"""
     permission_classes = [permissions.IsAdminUser]
     
+    @swagger_auto_schema(
+        operation_summary="Bulk Update Request Status",
+        operation_description="Update the status of multiple requests at once. Automatically logs activities for each updated request.",
+        operation_id="admin_requests_bulk_update",
+        tags=['Admin - Request Management'],
+        request_body=BulkStatusUpdateSerializer,
+        responses={
+            200: openapi.Response(
+                description="Requests updated successfully",
+                examples={
+                    "application/json": {
+                        "message": "Successfully updated 5 requests",
+                        "count": 5
+                    }
+                }
+            ),
+            400: "Bad Request - Invalid data",
+            403: "Forbidden - Admin access required"
+        }
+    )
     def patch(self, request):
         serializer = BulkStatusUpdateSerializer(data=request.data)
         
@@ -204,6 +285,19 @@ class AdminNoteView(APIView):
     """Manage admin notes for requests"""
     permission_classes = [permissions.IsAdminUser]
     
+    @swagger_auto_schema(
+        operation_summary="Add Admin Note to Request",
+        operation_description="Add an internal or public note to a specific request. Internal notes are only visible to admins.",
+        operation_id="admin_request_add_note",
+        tags=['Admin - Request Management'],
+        request_body=AdminNoteSerializer,
+        responses={
+            201: AdminNoteSerializer,
+            400: "Bad Request - Invalid note data",
+            404: "Request not found",
+            403: "Forbidden - Admin access required"
+        }
+    )
     def post(self, request, request_id):
         try:
             bg_request = Request.objects.get(id=request_id)
@@ -234,6 +328,19 @@ class AdminAssignmentView(APIView):
     """Manage request assignments"""
     permission_classes = [permissions.IsAdminUser]
     
+    @swagger_auto_schema(
+        operation_summary="Assign Request to Admin",
+        operation_description="Assign a background check request to a specific admin user for processing.",
+        operation_id="admin_request_assign",
+        tags=['Admin - Request Management'],
+        request_body=RequestAssignmentSerializer,
+        responses={
+            201: RequestAssignmentSerializer,
+            400: "Bad Request - Invalid assignment data",
+            404: "Request not found",
+            403: "Forbidden - Admin access required"
+        }
+    )
     def post(self, request, request_id):
         try:
             bg_request = Request.objects.get(id=request_id)
@@ -265,6 +372,19 @@ class AdminAssignmentView(APIView):
         except Request.DoesNotExist:
             return Response({'error': 'Request not found'}, status=status.HTTP_404_NOT_FOUND)
     
+    @swagger_auto_schema(
+        operation_summary="Update Request Assignment",
+        operation_description="Update the assignment of a request to a different admin user.",
+        operation_id="admin_request_reassign",
+        tags=['Admin - Request Management'],
+        request_body=RequestAssignmentSerializer,
+        responses={
+            200: RequestAssignmentSerializer,
+            400: "Bad Request - Invalid assignment data",
+            404: "Request or assignment not found",
+            403: "Forbidden - Admin access required"
+        }
+    )
     def patch(self, request, request_id):
         try:
             bg_request = Request.objects.get(id=request_id)
@@ -296,6 +416,16 @@ class AdminUsersView(APIView):
     """Manage admin users and their assignments"""
     permission_classes = [permissions.IsAdminUser]
     
+    @swagger_auto_schema(
+        operation_summary="Get All Admin Users",
+        operation_description="Get list of all admin/staff users in the system.",
+        operation_id="admin_users_list",
+        tags=['Admin - User Management'],
+        responses={
+            200: AdminUserSerializer(many=True),
+            403: "Forbidden - Admin access required"
+        }
+    )
     def get(self, request):
         admin_users = User.objects.filter(is_staff=True)
         serializer = AdminUserSerializer(admin_users, many=True)

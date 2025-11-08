@@ -68,6 +68,16 @@ class UserSubscriptionView(APIView):
     """View to manage user's subscription"""
     permission_classes = [permissions.IsAuthenticated]
     
+    @swagger_auto_schema(
+        operation_summary="Get My Subscription",
+        operation_description="Get the authenticated user's current subscription details including plan, status, and usage.",
+        operation_id="subscription_get",
+        tags=['Subscriptions'],
+        responses={
+            200: UserSubscriptionSerializer,
+            404: "No active subscription found"
+        }
+    )
     def get(self, request):
         """Get current user's subscription details"""
         try:
@@ -80,6 +90,18 @@ class UserSubscriptionView(APIView):
                 'message': 'No active subscription found'
             })
     
+    @swagger_auto_schema(
+        operation_summary="Create New Subscription",
+        operation_description="Subscribe to a plan using Stripe. Creates Stripe customer and subscription.",
+        operation_id="subscription_create",
+        tags=['Subscriptions'],
+        request_body=CreateSubscriptionSerializer,
+        responses={
+            201: UserSubscriptionSerializer,
+            400: "Bad request - Invalid data or user already has subscription",
+            404: "Plan not found"
+        }
+    )
     def post(self, request):
         """Create a new subscription for the user"""
         serializer = CreateSubscriptionSerializer(data=request.data)
@@ -161,6 +183,18 @@ class UserSubscriptionView(APIView):
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
+    @swagger_auto_schema(
+        operation_summary="Update Subscription Plan",
+        operation_description="Change subscription plan. Updates both Stripe subscription and local records.",
+        operation_id="subscription_update",
+        tags=['Subscriptions'],
+        request_body=UpdateSubscriptionSerializer,
+        responses={
+            200: UserSubscriptionSerializer,
+            400: "Bad request",
+            404: "Subscription or plan not found"
+        }
+    )
     def patch(self, request):
         """Update user's subscription plan"""
         try:
@@ -199,6 +233,18 @@ class UserSubscriptionView(APIView):
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
     
+    @swagger_auto_schema(
+        operation_summary="Cancel Subscription",
+        operation_description="Cancel the user's subscription. Can cancel immediately or at the end of billing period.",
+        operation_id="subscription_cancel",
+        tags=['Subscriptions'],
+        request_body=CancelSubscriptionSerializer,
+        responses={
+            200: UserSubscriptionSerializer,
+            400: "Bad request",
+            404: "No subscription found"
+        }
+    )
     def delete(self, request):
         """Cancel user's subscription"""
         try:
@@ -257,6 +303,15 @@ class SubscriptionUsageView(APIView):
     """View to get user's subscription usage information"""
     permission_classes = [permissions.IsAuthenticated]
     
+    @swagger_auto_schema(
+        operation_summary="Get Subscription Usage",
+        operation_description="Get current subscription usage statistics including requests used and remaining.",
+        operation_id="subscription_usage",
+        tags=['Subscriptions'],
+        responses={
+            200: SubscriptionUsageSerializer
+        }
+    )
     def get(self, request):
         try:
             subscription = UserSubscription.objects.get(user=request.user)
@@ -289,6 +344,22 @@ class PaymentHistoryView(APIView):
     """View to get user's payment history"""
     permission_classes = [permissions.IsAuthenticated]
     
+    @swagger_auto_schema(
+        operation_summary="Get Payment History",
+        operation_description="Get list of all past payments and invoices from Stripe.",
+        operation_id="subscription_payment_history",
+        tags=['Payments'],
+        responses={
+            200: openapi.Response(
+                description="List of payments",
+                examples={
+                    "application/json": {
+                        "payments": []
+                    }
+                }
+            )
+        }
+    )
     def get(self, request):
         payments = PaymentHistory.objects.filter(user=request.user).order_by('-created_at')
         serializer = PaymentHistorySerializer(payments, many=True)
@@ -298,6 +369,16 @@ class StripeWebhookView(APIView):
     """View to handle Stripe webhooks"""
     permission_classes = [permissions.AllowAny]
     
+    @swagger_auto_schema(
+        operation_summary="Stripe Webhook Handler",
+        operation_description="Webhook endpoint for Stripe events. Handles subscription updates, payments, and cancellations. This endpoint is called by Stripe, not by users.",
+        operation_id="stripe_webhook",
+        tags=['Payments'],
+        responses={
+            200: "Webhook processed successfully",
+            400: "Invalid payload or signature"
+        }
+    )
     def post(self, request):
         payload = request.body
         sig_header = request.META.get('HTTP_STRIPE_SIGNATURE')
@@ -468,6 +549,16 @@ class AdminSubscriptionStatsView(APIView):
     """Admin view for subscription statistics"""
     permission_classes = [permissions.IsAdminUser]
     
+    @swagger_auto_schema(
+        operation_summary="Get Subscription Statistics (Admin)",
+        operation_description="Get system-wide subscription statistics including revenue, subscriber counts, and popular plans. Admin only.",
+        operation_id="subscription_admin_stats",
+        tags=['Admin - Subscriptions'],
+        responses={
+            200: SubscriptionStatsSerializer,
+            403: "Admin access required"
+        }
+    )
     def get(self, request):
         # Calculate statistics
         total_subscribers = UserSubscription.objects.count()
@@ -516,6 +607,33 @@ class CreateCheckoutSessionView(APIView):
     """Create Stripe Checkout Session for subscription purchase"""
     permission_classes = [permissions.IsAuthenticated]
     
+    @swagger_auto_schema(
+        operation_summary="Create Stripe Checkout Session",
+        operation_description="Create a Stripe Checkout Session for subscribing to a plan. Returns checkout URL to redirect user to Stripe payment page.",
+        operation_id="subscription_create_checkout",
+        tags=['Payments'],
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['plan_id'],
+            properties={
+                'plan_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Subscription plan ID'),
+                'trial_period_days': openapi.Schema(type=openapi.TYPE_INTEGER, description='Trial period in days', default=0)
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Checkout session created",
+                examples={
+                    "application/json": {
+                        "checkout_url": "https://checkout.stripe.com/...",
+                        "session_id": "cs_test_..."
+                    }
+                }
+            ),
+            400: "Bad request",
+            404: "Plan not found"
+        }
+    )
     def post(self, request):
         """Create a Checkout Session and return the URL"""
         try:
@@ -613,6 +731,29 @@ class VerifyCheckoutSessionView(APIView):
     """Verify Checkout Session and create subscription"""
     permission_classes = [permissions.IsAuthenticated]
     
+    @swagger_auto_schema(
+        operation_summary="Verify Stripe Checkout Session",
+        operation_description="Verify that a Stripe Checkout Session was completed successfully after user returns from Stripe payment page.",
+        operation_id="subscription_verify_checkout",
+        tags=['Payments'],
+        manual_parameters=[
+            openapi.Parameter('session_id', openapi.IN_QUERY, description="Stripe checkout session ID", type=openapi.TYPE_STRING, required=True)
+        ],
+        responses={
+            200: openapi.Response(
+                description="Checkout session verified",
+                examples={
+                    "application/json": {
+                        "success": True,
+                        "message": "Subscription activated successfully",
+                        "subscription": {}
+                    }
+                }
+            ),
+            400: "Bad request or payment not completed",
+            404: "Session not found"
+        }
+    )
     def get(self, request):
         """Verify the checkout session and create/update subscription"""
         session_id = request.query_params.get('session_id')

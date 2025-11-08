@@ -48,8 +48,9 @@ class RequestViewSet(viewsets.ModelViewSet):
         return RequestSerializer
 
     @swagger_auto_schema(
-        operation_description="Create a new background check request. Requires active subscription.",
-        operation_summary="Create Background Check Request",
+        operation_description="Submit a new background check request. Requires active subscription and available request quota.",
+        operation_summary="Submit New Background Check Request",
+        operation_id="request_create",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=['name', 'dob', 'city', 'state', 'email', 'phone_number'],
@@ -126,6 +127,30 @@ class RequestViewSet(viewsets.ModelViewSet):
             serializer.validated_data.pop('status', None)
         serializer.save()
 
+    @swagger_auto_schema(
+        operation_summary="Download Background Check Report",
+        operation_description="Download the PDF report for a completed background check request.",
+        operation_id="request_download_report",
+        tags=['Background Check Reports'],
+        responses={
+            200: openapi.Response(
+                description="Report download information",
+                examples={
+                    "application/json": {
+                        "success": True,
+                        "report": {
+                            "id": 1,
+                            "download_url": "http://localhost:8000/media/reports/report_1.pdf",
+                            "filename": "report_1.pdf",
+                            "generated_at": "2024-01-22T14:20:00Z",
+                            "file_size_mb": "1.50 MB"
+                        }
+                    }
+                }
+            ),
+            404: "Report not found or not available yet"
+        }
+    )
     @action(detail=True, methods=['get'], url_path='download-report', url_name='download-report')
     def download_report(self, request, pk=None):
         """Allow clients to download their background check report"""
@@ -465,6 +490,52 @@ class RequestViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+    @swagger_auto_schema(
+        method='get',
+        operation_summary="Get Request Status Options (Admin)",
+        operation_description="Get current status and available status options for a request. Admin only.",
+        operation_id="request_admin_get_status",
+        tags=['Admin - Request Management'],
+        manual_parameters=[
+            openapi.Parameter('id', openapi.IN_PATH, description="Request ID", type=openapi.TYPE_INTEGER)
+        ],
+        responses={
+            200: openapi.Response(
+                description="Status information",
+                examples={
+                    "application/json": {
+                        "request_id": 1,
+                        "current_status": "Pending",
+                        "available_statuses": ["Pending", "In Progress", "Completed"]
+                    }
+                }
+            ),
+            403: "Admin access required",
+            404: "Request not found"
+        }
+    )
+    @swagger_auto_schema(
+        method='patch',
+        operation_summary="Update Request Status (Admin)",
+        operation_description="Update the status of a background check request. Admin only.",
+        operation_id="request_admin_update_status",
+        tags=['Admin - Request Management'],
+        manual_parameters=[
+            openapi.Parameter('id', openapi.IN_PATH, description="Request ID", type=openapi.TYPE_INTEGER)
+        ],
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'status': openapi.Schema(type=openapi.TYPE_STRING, enum=['Pending', 'In Progress', 'Completed'], description='New status')
+            }
+        ),
+        responses={
+            200: "Status updated successfully",
+            400: "Invalid status",
+            403: "Admin access required",
+            404: "Request not found"
+        }
+    )
     @action(detail=True, methods=['get', 'patch'], permission_classes=[permissions.IsAdminUser], url_path='update-status', url_name='update-status')
     def update_status(self, request, pk=None):
         """Update request status (admin only)"""
@@ -496,6 +567,27 @@ class RequestViewSet(viewsets.ModelViewSet):
             })
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @swagger_auto_schema(
+        operation_summary="Get Dashboard Statistics (Admin)",
+        operation_description="Get admin dashboard statistics including request counts by status.",
+        operation_id="request_admin_dashboard_stats",
+        tags=['Admin - Dashboard'],
+        responses={
+            200: openapi.Response(
+                description="Dashboard statistics",
+                examples={
+                    "application/json": {
+                        "total_requests": 150,
+                        "pending": 20,
+                        "in_progress": 30,
+                        "completed": 100,
+                        "completion_rate": "66.7%"
+                    }
+                }
+            ),
+            403: "Admin access required"
+        }
+    )
     @action(detail=False, methods=['get'], permission_classes=[permissions.IsAdminUser])
     def dashboard_stats(self, request):
         """Get dashboard statistics (admin only)"""
@@ -514,8 +606,10 @@ class RequestViewSet(viewsets.ModelViewSet):
         })
 
     @swagger_auto_schema(
-        operation_description="Get user's background check requests dashboard with status tracking",
-        operation_summary="User Dashboard - My Requests",
+        operation_description="Get user's background check requests dashboard with status tracking and subscription details.",
+        operation_summary="Get My Background Check Dashboard",
+        operation_id="request_user_dashboard",
+        tags=['Background Check Requests'],
         responses={
             200: openapi.Response(
                 description="User dashboard with all requests",
@@ -555,8 +649,7 @@ class RequestViewSet(viewsets.ModelViewSet):
                 }
             ),
             401: "Unauthorized - Authentication required"
-        },
-        tags=['User Dashboard']
+        }
     )
     @action(detail=False, methods=['get'], url_path='my-dashboard', url_name='my-dashboard')
     def my_dashboard(self, request):
@@ -639,6 +732,17 @@ class RequestViewSet(viewsets.ModelViewSet):
             'message': 'Dashboard data retrieved successfully'
         })
 
+    @swagger_auto_schema(
+        operation_summary="Get Admin Report Form Data",
+        operation_description="Get request details and existing report data for admin report submission form. Admin only.",
+        operation_id="request_admin_report_form",
+        tags=['Admin - Reports'],
+        responses={
+            200: "Request and report data",
+            403: "Admin access required",
+            404: "Request not found"
+        }
+    )
     @action(detail=True, methods=['get'], permission_classes=[permissions.IsAdminUser], url_path='admin-report-form', url_name='admin-report-form')
     def get_admin_report_form(self, request, pk=None):
         """Get request details and existing report data for admin form"""
@@ -688,6 +792,19 @@ class RequestViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
 
+    @swagger_auto_schema(
+        methods=['post', 'put'],
+        operation_summary="Submit Background Check Report (Admin)",
+        operation_description="Submit or update a complete background check report. Admin only. Automatically sets request status to 'Completed'. POST creates new report, PUT updates existing.",
+        operation_id="request_admin_submit_report",
+        tags=['Admin - Reports'],
+        responses={
+            200: "Report submitted/updated successfully",
+            400: "Invalid report data",
+            403: "Admin access required",
+            404: "Request not found"
+        }
+    )
     @action(detail=True, methods=['post', 'put'], permission_classes=[permissions.IsAdminUser], url_path='submit-report', url_name='submit-report')
     def submit_admin_report(self, request, pk=None):
         """Submit or update complete background check report from admin"""
@@ -741,6 +858,24 @@ class RequestViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+    @swagger_auto_schema(
+        operation_summary="Get Pending Reports (Admin)",
+        operation_description="Get all background check requests that need reports to be filled out. Admin only.",
+        operation_id="request_admin_pending_reports",
+        tags=['Admin - Reports'],
+        responses={
+            200: openapi.Response(
+                description="List of pending requests",
+                examples={
+                    "application/json": {
+                        "count": 5,
+                        "pending_requests": []
+                    }
+                }
+            ),
+            403: "Admin access required"
+        }
+    )
     @action(detail=False, methods=['get'], permission_classes=[permissions.IsAdminUser], url_path='pending-reports', url_name='pending-reports')
     def get_pending_reports(self, request):
         """Get all requests that need reports to be filled out"""
@@ -801,6 +936,26 @@ class ReportViewSet(viewsets.ModelViewSet):
         request_obj.status = 'Completed'
         request_obj.save()
 
+    @swagger_auto_schema(
+        operation_summary="Download Report PDF",
+        operation_description="Get download URL for a background check report PDF file. Admin only.",
+        operation_id="report_download",
+        tags=['Admin - Reports'],
+        responses={
+            200: openapi.Response(
+                description="Report download URL",
+                examples={
+                    "application/json": {
+                        "download_url": "http://localhost:8000/media/reports/report_1.pdf",
+                        "filename": "report_1.pdf",
+                        "size": 156789
+                    }
+                }
+            ),
+            404: "PDF file not available",
+            403: "Admin access required"
+        }
+    )
     @action(detail=True, methods=['get'])
     def download(self, request, pk=None):
         """Download report PDF"""

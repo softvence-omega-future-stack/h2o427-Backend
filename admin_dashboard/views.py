@@ -10,8 +10,9 @@ class AdminRequestView(APIView):
     permission_classes = [permissions.IsAdminUser]
     
     @swagger_auto_schema(
-        operation_description="Get all background check requests (Admin only)",
-        operation_summary="List All Requests (Admin)",
+        operation_description="Get all background check requests with admin access. Returns complete list with user details and status.",
+        operation_summary="Get All Background Check Requests",
+        operation_id="admin_all_requests",
         responses={
             200: openapi.Response(
                 description="List of all background check requests",
@@ -30,7 +31,7 @@ class AdminRequestView(APIView):
             ),
             403: "Forbidden - Admin only"
         },
-        tags=['Admin Dashboard']
+        tags=['Admin - Reports']
     )
     def get(self, request):
         """Get all background check requests for admin dashboard"""
@@ -39,8 +40,9 @@ class AdminRequestView(APIView):
         return Response(serializer.data)
 
     @swagger_auto_schema(
-        operation_description="Update request status (Admin only)",
-        operation_summary="Update Request Status",
+        operation_description="Update the status of a background check request. Admin only. Valid statuses: Pending, In Progress, Completed.",
+        operation_summary="Change Request Status",
+        operation_id="admin_update_request_status",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=['request_id', 'status'],
@@ -66,7 +68,7 @@ class AdminRequestView(APIView):
             403: "Forbidden - Admin only",
             404: "Not Found - Request not found"
         },
-        tags=['Admin Dashboard']
+        tags=['Admin - Reports']
     )
     def patch(self, request, request_id=None):
         """Update request status"""
@@ -106,8 +108,9 @@ class AdminReportView(APIView):
     permission_classes = [permissions.IsAdminUser]
     
     @swagger_auto_schema(
-        operation_description="Upload or update PDF report for a background check request (Admin only)",
-        operation_summary="Upload Report (Admin)",
+        operation_description="Upload a PDF report for a completed background check. Admin only. Automatically sets request status to 'Completed'.",
+        operation_summary="Upload Background Check Report",
+        operation_id="admin_upload_report",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=['request_id', 'pdf'],
@@ -137,7 +140,7 @@ class AdminReportView(APIView):
             403: "Forbidden - Admin only",
             404: "Not Found - Request not found"
         },
-        tags=['Admin Dashboard']
+        tags=['Admin - Reports']
     )
     def post(self, request):
         """Upload or generate PDF report for a background check request"""
@@ -200,8 +203,9 @@ class AdminReportView(APIView):
             )
 
     @swagger_auto_schema(
-        operation_description="Get all reports (Admin only)",
-        operation_summary="List All Reports (Admin)",
+        operation_description="Get all generated reports with request details. Admin only.",
+        operation_summary="Get All Generated Reports",
+        operation_id="admin_all_reports",
         responses={
             200: openapi.Response(
                 description="List of all reports",
@@ -219,7 +223,7 @@ class AdminReportView(APIView):
             ),
             403: "Forbidden - Admin only"
         },
-        tags=['Admin Dashboard']
+        tags=['Admin - Reports']
     )
     def get(self, request):
         """Get all reports for admin dashboard"""
