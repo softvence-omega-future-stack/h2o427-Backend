@@ -63,83 +63,81 @@ def send_push_notification(device_tokens, title, body, data=None, image_url=None
             'failed_tokens': []
         }
     
-    try:
-        # Prepare notification
-        notification = messaging.Notification(
-            title=title,
-            body=body,
-            image=image_url if image_url else None
-        )
-        
-        # Prepare data payload
-        if data is None:
-            data = {}
-        
-        # Add timestamp to data
-        data['timestamp'] = str(timezone.now().isoformat())
-        
-        # Create message
-        message = messaging.MulticastMessage(
-            notification=notification,
-            data=data,
-            tokens=device_tokens,
-            android=messaging.AndroidConfig(
-                priority='high',
-                notification=messaging.AndroidNotification(
-                    sound='default',
-                    color='#4CAF50',
-                    channel_id='background_check_notifications'
-                )
-            ),
-            apns=messaging.APNSConfig(
-                payload=messaging.APNSPayload(
-                    aps=messaging.Aps(
+    # Prepare data payload
+    if data is None:
+        data = {}
+    
+    # Add timestamp to data
+    data['timestamp'] = str(timezone.now().isoformat())
+    
+    # Convert all data values to strings (FCM requirement)
+    data = {k: str(v) for k, v in data.items()}
+    
+    success_count = 0
+    failure_count = 0
+    failed_tokens = []
+    
+    # Send notification to each token individually using v1 API
+    for token in device_tokens:
+        try:
+            # Prepare notification
+            notification = messaging.Notification(
+                title=title,
+                body=body,
+                image=image_url if image_url else None
+            )
+            
+            # Create message for single device (v1 API)
+            message = messaging.Message(
+                notification=notification,
+                data=data,
+                token=token,
+                android=messaging.AndroidConfig(
+                    priority='high',
+                    notification=messaging.AndroidNotification(
                         sound='default',
-                        badge=1,
-                        content_available=True
+                        color='#4CAF50',
+                        channel_id='background_check_notifications'
+                    )
+                ),
+                apns=messaging.APNSConfig(
+                    payload=messaging.APNSPayload(
+                        aps=messaging.Aps(
+                            sound='default',
+                            badge=1,
+                            content_available=True
+                        )
+                    )
+                ),
+                webpush=messaging.WebpushConfig(
+                    notification=messaging.WebpushNotification(
+                        icon='/static/icons/notification-icon.png',
+                        badge='/static/icons/badge-icon.png'
                     )
                 )
-            ),
-            webpush=messaging.WebpushConfig(
-                notification=messaging.WebpushNotification(
-                    icon='/static/icons/notification-icon.png',
-                    badge='/static/icons/badge-icon.png'
-                )
             )
-        )
-        
-        # Send the message
-        response = messaging.send_multicast(message)
-        
-        # Log results
-        logger.info(f"Successfully sent {response.success_count} notifications")
-        if response.failure_count > 0:
-            logger.warning(f"Failed to send {response.failure_count} notifications")
-        
-        # Collect failed tokens
-        failed_tokens = []
-        if response.failure_count > 0:
-            for idx, resp in enumerate(response.responses):
-                if not resp.success:
-                    failed_tokens.append({
-                        'token': device_tokens[idx],
-                        'error': str(resp.exception) if resp.exception else 'Unknown error'
-                    })
-        
-        return {
-            'success_count': response.success_count,
-            'failure_count': response.failure_count,
-            'failed_tokens': failed_tokens
-        }
+            
+            # Send the message (v1 API)
+            response = messaging.send(message)
+            logger.info(f"Successfully sent notification: {response}")
+            success_count += 1
+            
+        except Exception as e:
+            logger.error(f"Failed to send notification to token {token[:50]}...: {str(e)}")
+            failure_count += 1
+            failed_tokens.append({
+                'token': token,
+                'error': str(e)
+            })
     
-    except Exception as e:
-        logger.error(f"Error sending push notification: {str(e)}")
-        return {
-            'success_count': 0,
-            'failure_count': len(device_tokens),
-            'failed_tokens': [{'token': token, 'error': str(e)} for token in device_tokens],
-            'error': str(e)
-        }
+    # Log results
+    logger.info(f"Push notification summary: {success_count} succeeded, {failure_count} failed")
+    
+    return {
+        'success_count': success_count,
+        'failure_count': failure_count,
+        'failed_tokens': failed_tokens
+    }
 
 
 def send_notification_to_user(user, title, body, notification_type='general', data=None, image_url=None):
