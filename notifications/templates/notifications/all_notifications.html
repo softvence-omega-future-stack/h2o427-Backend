@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>All Notifications</title>
+    <style>
+        body {
+            margin: 20px;
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .box {
+            border: 1px solid black;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        table, th, td {
+            border: 1px solid black;
+        }
+        th, td {
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            font-weight: bold;
+        }
+        .actions a {
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>All Notifications & Devices</h1>
+        
+        <p>
+            <a href="{% url 'notifications:test_notifications' %}">Go to Test Page</a>
+        </p>
+        
+        <div class="box">
+            <h2>Quick Reference - Users</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>User ID</th>
+                        <th>Username</th>
+                        <th>Email</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td>{{ user.id }}</td>
+                        <td>{{ user.username }}</td>
+                        <td>{{ user.email }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="3">No users found</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="box">
+            <h2>All Notifications (Last 50)</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Recipient</th>
+                        <th>Title</th>
+                        <th>Message</th>
+                        <th>Type</th>
+                        <th>Category</th>
+                        <th>Read</th>
+                        <th>Created</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for notification in all_notifications %}
+                    <tr>
+                        <td>{{ notification.id }}</td>
+                        <td>{{ notification.recipient.username }} (ID: {{ notification.recipient.id }})</td>
+                        <td>{{ notification.title }}</td>
+                        <td>{{ notification.message|truncatechars:50 }}</td>
+                        <td>{{ notification.get_type_display }}</td>
+                        <td>{{ notification.get_category_display }}</td>
+                        <td>{% if notification.is_read %}Yes{% else %}No{% endif %}</td>
+                        <td>{{ notification.created_at|date:"Y-m-d H:i" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8">No notifications found</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="box">
+            <h2>All Registered Devices (Last 50)</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>User</th>
+                        <th>Device Type</th>
+                        <th>Token</th>
+                        <th>Active</th>
+                        <th>Registered</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for device in all_devices %}
+                    <tr>
+                        <td>{{ device.id }}</td>
+                        <td>{{ device.user.username }} (ID: {{ device.user.id }})</td>
+                        <td>{{ device.device_type }}</td>
+                        <td>{{ device.registration_token|truncatechars:40 }}</td>
+                        <td>{% if device.active %}Yes{% else %}No{% endif %}</td>
+                        <td>{{ device.created_at|date:"Y-m-d H:i" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6">No devices registered yet</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>

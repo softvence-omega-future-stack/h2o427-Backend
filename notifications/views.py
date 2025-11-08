@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.db.models import Q
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
@@ -455,3 +456,179 @@ class FCMDeviceViewSet(viewsets.ModelViewSet):
             'message': f'Successfully deactivated {count} devices',
             'count': count
         }, status=status.HTTP_200_OK)
+
+
+# ==================== Test Views (MTV Pattern) ====================
+from django.shortcuts import render, redirect
+from django.contrib import messages
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+
+
+def all_notifications_view(request):
+    """View all notifications and devices - simple overview page"""
+    # Get all notifications
+    all_notifications = Notification.objects.all().order_by('-created_at')[:50]
+    
+    # Get all devices
+    all_devices = FCMDevice.objects.all().order_by('-created_at')[:50]
+    
+    # Get all users for quick reference
+    users = User.objects.all().values('id', 'username', 'email')[:20]
+    
+    context = {
+        'all_notifications': all_notifications,
+        'all_devices': all_devices,
+        'users': users,
+    }
+    return render(request, 'notifications/all_notifications.html', context)
+
+
+def test_notifications_view(request):
+    """Main test page for notification system"""
+    notifications = None
+    devices = FCMDevice.objects.all().order_by('-created_at')[:20]
+    
+    # Get notifications if user_id is provided
+    if request.GET.get('user_id'):
+        user_id = request.GET.get('user_id')
+        notifications = Notification.objects.filter(recipient_id=user_id).order_by('-created_at')
+    
+    context = {
+        'notifications': notifications,
+        'devices': devices,
+    }
+    return render(request, 'notifications/test_notifications.html', context)
+
+
+@require_http_methods(["POST"])
+def test_register_device(request):
+    """Register a device token"""
+    try:
+        user_id = request.POST.get('user_id')
+        device_token = request.POST.get('device_token')
+        device_type = request.POST.get('device_type', 'android')
+        
+        # Get or create user
+        user = User.objects.get(id=user_id)
+        
+        # Create or update device
+        device, created = FCMDevice.objects.update_or_create(
+            user=user,
+            registration_token=device_token,
+            defaults={
+                'device_type': device_type,
+                'active': True
+            }
+        )
+        
+        if created:
+            messages.success(request, f'Device token registered successfully for User ID: {user_id}')
+        else:
+            messages.success(request, f'Device token updated successfully for User ID: {user_id}')
+            
+    except User.DoesNotExist:
+        messages.error(request, f'User with ID {user_id} does not exist')
+    except Exception as e:
+        messages.error(request, f'Error registering device: {str(e)}')
+    
+    return redirect('notifications:test_notifications')
+
+
+@require_http_methods(["POST"])
+def test_send_notification(request):
+    """Send a test notification"""
+    try:
+        user_id = request.POST.get('user_id')
+        title = request.POST.get('title')
+        message_text = request.POST.get('message')
+        notification_type = request.POST.get('notification_type', 'general')
+        
+        # Get user
+        user = User.objects.get(id=user_id)
+        
+        # Map notification_type to model fields
+        type_mapping = {
+            'general': Notification.SYSTEM,
+            'request_update': Notification.ADMIN_TO_USER,
+            'report_ready': Notification.ADMIN_TO_USER,
+            'subscription': Notification.SYSTEM,
+            'admin': Notification.ADMIN_TO_USER,
+        }
+        
+        category_mapping = {
+            'general': Notification.GENERAL,
+            'request_update': Notification.BACKGROUND_CHECK,
+            'report_ready': Notification.REPORT,
+            'subscription': Notification.SUBSCRIPTION,
+            'admin': Notification.GENERAL,
+        }
+        
+        # Create notification
+        notification = Notification.objects.create(
+            recipient=user,
+            title=title,
+            message=message_text,
+            type=type_mapping.get(notification_type, Notification.SYSTEM),
+            category=category_mapping.get(notification_type, Notification.GENERAL),
+            sender=None  # System notification
+        )
+        
+        # Try to send push notification using the correct function
+        from .firebase_service import send_notification_to_user
+        result = send_notification_to_user(
+            user=user,
+            title=title,
+            body=message_text,
+            notification_type=notification_type,
+            data={'notification_id': str(notification.id)}
+        )
+        
+        if result.get('success_count', 0) > 0:
+            # Update notification record
+            notification.push_sent = True
+            notification.push_sent_at = timezone.now()
+            notification.save(update_fields=['push_sent', 'push_sent_at'])
+            
+            messages.success(request, f'Notification sent successfully to User ID: {user_id}. Push sent to {result.get("success_count", 0)} devices.')
+        elif result.get('message'):
+            messages.warning(request, f'Notification created but {result.get("message")}')
+        else:
+            notification.push_error = f"Failed: {result.get('failure_count', 0)} devices failed"
+            notification.save(update_fields=['push_error'])
+            messages.warning(request, f'Notification created but push failed to {result.get("failure_count", 0)} devices')
+            
+    except User.DoesNotExist:
+        messages.error(request, f'User with ID {user_id} does not exist')
+    except Exception as e:
+        messages.error(request, f'Error sending notification: {str(e)}')
+    
+    return redirect('notifications:test_notifications')
+
+
+def test_view_notifications(request):
+    """View notifications for a user"""
+    user_id = request.GET.get('user_id')
+    
+    if not user_id:
+        messages.error(request, 'User ID is required')
+        return redirect('notifications:test_notifications')
+    
+    return redirect(f'/notifications/test/?user_id={user_id}')
+
+
+@require_http_methods(["POST"])
+def test_mark_read(request, notification_id):
+    """Mark a notification as read"""
+    try:
+        notification = Notification.objects.get(id=notification_id)
+        notification.mark_as_read()
+        messages.success(request, f'Notification {notification_id} marked as read')
+    except Notification.DoesNotExist:
+        messages.error(request, f'Notification {notification_id} not found')
+    except Exception as e:
+        messages.error(request, f'Error marking notification as read: {str(e)}')
+    
+    # Redirect back to the page with the user_id filter
+    user_id = request.POST.get('user_id') or notification.recipient_id
+    return redirect(f'/notifications/test/?user_id={user_id}')
