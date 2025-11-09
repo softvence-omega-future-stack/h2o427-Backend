@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Select Plan</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; border: 1px solid black; padding: 20px; }
+        .header { border: 1px solid black; padding: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; }
+        h1, h2 { border-bottom: 1px solid black; padding: 10px; margin-bottom: 15px; }
+        .plan-list { border: 1px solid black; padding: 15px; }
+        .plan-item { border: 1px solid black; padding: 15px; margin-bottom: 15px; }
+        .plan-item h3 { border-bottom: 1px solid black; padding: 5px; margin-bottom: 10px; }
+        .plan-details { border: 1px solid black; padding: 10px; margin: 10px 0; }
+        form { display: inline; }
+        button { padding: 8px 15px; border: 2px solid black; background: white; cursor: pointer; margin-top: 10px; }
+        button:hover { background: #f0f0f0; }
+        .links { border: 1px solid black; padding: 10px; margin-top: 15px; text-align: center; }
+        .message { border: 2px solid black; padding: 10px; margin-bottom: 15px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+    <div class="header">
+        <span>User: {{ user.username }}</span>
+        <a href="{% url 'auth:logout-page' %}">Logout</a>
+    </div>
+    
+    <h1>Select Plan</h1>
+    
+    {% if messages %}
+        {% for message in messages %}
+            <div class="message">{{ message }}</div>
+        {% endfor %}
+    {% endif %}
+    
+    <h2>Available Plans</h2>
+    
+    <div class="plan-list">
+    {% for plan in plans %}
+        <div class="plan-item">
+            <h3>{{ plan.name }}</h3>
+            <div class="plan-details">
+                <p>Price per report: ${{ plan.price_per_report }}</p>
+                <p>{{ plan.description }}</p>
+                
+                <div style="border-top: 1px solid black; margin-top: 10px; padding-top: 10px;">
+                <strong>Features:</strong>
+                <ul style="margin-left: 20px; margin-top: 5px;">
+                    {% if plan.identity_verification %}<li>Identity Verification</li>{% endif %}
+                    {% if plan.ssn_trace %}<li>SSN Trace</li>{% endif %}
+                    {% if plan.national_criminal_search %}<li>National Criminal Search</li>{% endif %}
+                    {% if plan.sex_offender_registry %}<li>Sex Offender Registry</li>{% endif %}
+                    {% if plan.employment_verification %}<li>Employment Verification</li>{% endif %}
+                    {% if plan.education_verification %}<li>Education Verification</li>{% endif %}
+                    {% if plan.unlimited_county_search %}<li>Unlimited County Search</li>{% endif %}
+                </ul>
+                </div>
+            </div>
+            
+            <form method="post" action="{% url 'subscriptions:select-plan' %}">
+                {% csrf_token %}
+                <input type="hidden" name="plan_id" value="{{ plan.id }}">
+                <button type="submit">Select This Plan</button>
+            </form>
+        </div>
+    {% endfor %}
+    </div>
+    
+    <div class="links">
+        <p><a href="{% url 'subscriptions:my-dashboard' %}">View My Dashboard</a></p>
+    </div>
+    </div>
+</body>
+</html>

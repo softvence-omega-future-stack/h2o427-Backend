@@ -89,31 +89,37 @@ class RequestViewSet(viewsets.ModelViewSet):
         return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
-        # Check if user has active subscription
+        # Check if user has subscription
         try:
-            subscription = UserSubscription.objects.get(
-                user=self.request.user,
-                status='active'
-            )
+            subscription = UserSubscription.objects.get(user=self.request.user)
         except UserSubscription.DoesNotExist:
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied({
-                'error': 'No active subscription',
-                'message': 'You need an active subscription to submit background check requests.',
-                'action': 'Please subscribe to a plan to continue.',
-                'plans_url': '/api/subscriptions/ui/plans/'
+                'error': 'No subscription found',
+                'message': 'You need to select a plan before submitting background check requests.',
+                'action': 'Please select a plan to continue.',
+                'plans_url': '/api/subscriptions/plans/'
             })
         
-        # Check if user can make more requests
+        # Check if user has plan assigned
+        if not subscription.plan:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied({
+                'error': 'No plan selected',
+                'message': 'Please select a plan before submitting requests.',
+                'plans_url': '/api/subscriptions/plans/'
+            })
+        
+        # Check if user can make more requests (has free trial or purchased reports)
         if not subscription.can_make_request:
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied({
-                'error': 'Request limit reached',
-                'message': f'You have used all {subscription.plan.max_requests_per_month} requests for this month.',
-                'current_usage': subscription.requests_used_this_month,
-                'limit': subscription.plan.max_requests_per_month,
-                'action': 'Please upgrade your plan or wait until next month.',
-                'upgrade_url': '/api/subscriptions/ui/plans/'
+                'error': 'No reports available',
+                'message': 'You have no available reports. Please purchase more reports.',
+                'free_trial_used': subscription.free_trial_used,
+                'available_reports': subscription.available_reports,
+                'action': 'Purchase reports to continue.',
+                'purchase_url': '/api/subscriptions/purchase-report/'
             })
         
         # Save the request and increment usage
@@ -664,22 +670,20 @@ class RequestViewSet(viewsets.ModelViewSet):
         try:
             subscription = UserSubscription.objects.get(user=user)
             subscription_data = {
-                'plan_name': subscription.plan.name,
-                'plan_price': str(subscription.plan.price),
-                'billing_cycle': subscription.plan.billing_cycle,
-                'requests_used': subscription.requests_used_this_month,
-                'requests_limit': subscription.plan.max_requests_per_month,
-                'requests_remaining': subscription.remaining_requests,
-                'status': subscription.status,
-                'start_date': subscription.start_date.isoformat() if subscription.start_date else None,
-                'end_date': subscription.end_date.isoformat() if subscription.end_date else None,
-                'can_make_request': subscription.can_make_request
+                'plan_name': subscription.plan.name if subscription.plan else None,
+                'plan_price_per_report': str(subscription.plan.price_per_report) if subscription.plan else None,
+                'free_trial_used': subscription.free_trial_used,
+                'free_trial_available': subscription.can_use_free_trial,
+                'reports_purchased': subscription.total_reports_purchased,
+                'reports_used': subscription.total_reports_used,
+                'reports_available': subscription.available_reports,
+                'can_make_request': subscription.can_make_request,
+                'created_at': subscription.created_at.isoformat() if subscription.created_at else None
             }
         except UserSubscription.DoesNotExist:
             subscription_data = {
                 'plan_name': None,
-                'status': 'inactive',
-                'message': 'No active subscription. Please subscribe to a plan.',
+                'message': 'No subscription found. Please select a plan.',
                 'plans_url': '/api/subscriptions/plans/'
             }
         
@@ -982,17 +986,19 @@ from django.contrib import messages
 def submit_request_view(request):
     """Display form to submit background check request"""
     try:
-        subscription = UserSubscription.objects.get(
-            user=request.user,
-            status='active'
-        )
+        subscription = UserSubscription.objects.get(user=request.user)
     except UserSubscription.DoesNotExist:
-        messages.error(request, 'You need an active subscription to submit requests. Please subscribe to a plan first.')
+        messages.error(request, 'You need to select a plan first. Please view available plans.')
+        return redirect('subscriptions:plans_list')
+    
+    # Check if user has a plan assigned
+    if not subscription.plan:
+        messages.error(request, 'Please select a plan before submitting requests.')
         return redirect('subscriptions:plans_list')
     
     # Check if user can make requests
     if not subscription.can_make_request:
-        messages.error(request, f'You have used all {subscription.plan.max_requests_per_month} requests for this month.')
+        messages.error(request, 'You have no available reports. Please purchase more reports to continue.')
         return redirect('subscriptions:subscription_dashboard')
     
     if request.method == 'POST':
@@ -1018,14 +1024,8 @@ def submit_request_view(request):
         except Exception as e:
             messages.error(request, f'Error submitting request: {str(e)}')
     
-    # Calculate usage percentage
-    usage_percentage = 0
-    if subscription.plan.max_requests_per_month <= 900000:
-        usage_percentage = (subscription.requests_used_this_month / subscription.plan.max_requests_per_month) * 100
-    
     return render(request, 'requests/submit.html', {
-        'subscription': subscription,
-        'usage_percentage': min(usage_percentage, 100)
+        'subscription': subscription
     })
 
 

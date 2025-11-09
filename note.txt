@@ -1,0 +1,57 @@
+
+## All Available Endpoints
+
+**Authentication:**
+- POST /api/auth/login/
+- POST /api/auth/register/
+- POST /api/auth/logout/
+- GET /api/auth/profile/
+- PATCH /api/auth/profile/update/
+- POST /api/auth/change-password/
+- POST /api/auth/forgot-password/
+- POST /api/auth/reset-password/
+
+**Background Requests:**
+- GET /api/requests/api/ (list all requests)
+- POST /api/requests/api/ (create new request)
+- GET /api/requests/api/{id}/ (get request details)
+- PATCH /api/requests/api/{id}/ (update request)
+- DELETE /api/requests/api/{id}/ (delete request)
+- GET /api/requests/api/my-dashboard/ (user dashboard)
+- GET /api/requests/api/{id}/view-report/ (view report details)
+- GET /api/requests/api/{id}/download-report/ (download report PDF)
+
+**Subscriptions:**
+- GET /api/subscriptions/plans/
+- POST /api/subscriptions/purchase-report/
+- POST /api/subscriptions/confirm-payment/
+- GET /api/subscriptions/usage/
+
+**Admin:**
+- GET /api/requests/api/dashboard_stats/ (admin only)
+- GET /api/requests/api/pending-reports/ (admin only)
+- GET /api/requests/api/{id}/admin-report-form/ (admin only)
+- POST /api/requests/api/{id}/submit-report/ (admin only)
+- PATCH /api/requests/api/{id}/update-status/ (admin only)
+
+
+
+### 2. Access URLs
+
+Registration:
+http://localhost:8000/api/auth/register-page/
+
+Login:
+http://localhost:8000/api/auth/login-page/
+
+Dashboard:
+http://localhost:8000/api/subscriptions/my-dashboard/
+
+Select Plan:
+http://localhost:8000/api/subscriptions/plans-page/
+
+Purchase Reports:
+http://localhost:8000/api/subscriptions/purchase-page/
+
+Submit Request:
+http://localhost:8000/api/requests/submit-page/

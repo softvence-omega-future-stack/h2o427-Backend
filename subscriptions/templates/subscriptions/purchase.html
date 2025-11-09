@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Purchase Reports</title>
+    <script src="https://js.stripe.com/v3/"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; border: 1px solid black; padding: 20px; }
+        .header { border: 1px solid black; padding: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; }
+        h1, h2 { border-bottom: 2px solid black; padding: 10px; margin-bottom: 15px; }
+        .section { border: 1px solid black; padding: 15px; margin-bottom: 20px; }
+        .info-box { border: 1px solid black; padding: 8px; margin: 5px 0; }
+        form { border: 1px solid black; padding: 15px; }
+        label { display: block; margin-top: 10px; border-bottom: 1px solid black; padding: 5px; }
+        input, #card-element { width: 100%; padding: 8px; margin-top: 5px; border: 1px solid black; }
+        button { width: 100%; padding: 10px; margin-top: 15px; border: 2px solid black; background: white; cursor: pointer; }
+        button:hover { background: #f0f0f0; }
+        button:disabled { background: #e0e0e0; cursor: not-allowed; }
+        #card-errors { border: 1px solid black; padding: 8px; margin-top: 10px; min-height: 30px; }
+        #result-message { border: 2px solid black; padding: 10px; margin-top: 15px; }
+        .links { border: 1px solid black; padding: 10px; margin-top: 15px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+    <div class="header">
+        <span>User: {{ user.username }}</span>
+        <a href="{% url 'auth:logout-page' %}">Logout</a>
+    </div>
+    
+    <h1>Purchase Reports</h1>
+    
+    <div class="section">
+    {% if subscription %}
+        <h2>Your Subscription</h2>
+        <div class="info-box"><p><strong>Plan:</strong> {{ subscription.plan.name }}</p></div>
+        <div class="info-box"><p><strong>Price per report:</strong> ${{ subscription.plan.price_per_report }}</p></div>
+        <div class="info-box"><p><strong>Available reports:</strong> {{ subscription.available_reports }}</p></div>
+    {% endif %}
+    </div>
+    
+    <h2>Buy More Reports</h2>
+    
+    <form id="purchase-form">
+        <label>Number of reports:</label>
+        <input type="number" id="quantity" name="quantity" value="5" min="1" max="100">
+        
+        <div class="info-box" style="margin-top: 10px;">
+            <p><strong>Total:</strong> $<span id="total-amount">125.00</span></p>
+        </div>
+        
+        <label>Card Details:</label>
+        <div id="card-element"></div>
+        <div id="card-errors"></div>
+        
+        <button type="submit" id="submit-button">Purchase Reports</button>
+    </form>
+    
+    <div id="result-message"></div>
+    
+    <div class="links">
+        <a href="{% url 'subscriptions:my-dashboard' %}">Back to Dashboard</a>
+    </div>
+    
+    <script>
+        const stripe = Stripe('{{ stripe_public_key }}');
+        const elements = stripe.elements();
+        const cardElement = elements.create('card');
+        cardElement.mount('#card-element');
+        
+        const planId = parseInt("{{ subscription.plan.id }}", 10);
+        const pricePerReport = parseFloat('{{ subscription.plan.price_per_report }}');
+        
+        document.getElementById('quantity').addEventListener('change', function() {
+            const quantity = parseInt(this.value);
+            const total = (quantity * pricePerReport).toFixed(2);
+            document.getElementById('total-amount').textContent = total;
+        });
+        
+        document.getElementById('purchase-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const quantity = parseInt(document.getElementById('quantity').value);
+            const submitButton = document.getElementById('submit-button');
+            submitButton.disabled = true;
+            submitButton.textContent = 'Processing...';
+            
+            try {
+                // Step 1: Create payment intent
+                const response = await fetch('/api/subscriptions/purchase-report/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token }}'
+                    },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({
+                        plan_id: planId,
+                        quantity: quantity
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Payment failed');
+                }
+                
+                // Step 2: Confirm payment with Stripe
+                const result = await stripe.confirmCardPayment(data.client_secret, {
+                    payment_method: {
+                        card: cardElement,
+                        billing_details: {
+                            email: '{{ user.email }}'
+                        }
+                    }
+                });
+                
+                if (result.error) {
+                    document.getElementById('card-errors').textContent = result.error.message;
+                    submitButton.disabled = false;
+                    submitButton.textContent = 'Purchase Reports';
+                } else {
+                    // Step 3: Confirm with backend
+                    const confirmResponse = await fetch('/api/subscriptions/confirm-payment/', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': '{{ csrf_token }}'
+                        },
+                        credentials: 'same-origin',
+                        body: JSON.stringify({
+                            payment_intent_id: result.paymentIntent.id
+                        })
+                    });
+                    
+                    const confirmData = await confirmResponse.json();
+                    
+                    if (confirmResponse.ok) {
+                        document.getElementById('result-message').innerHTML = 
+                            '<p><strong>Success!</strong> You purchased ' + quantity + ' reports.</p>' +
+                            '<p><a href="{% url "subscriptions:my-dashboard" %}">Go to Dashboard</a></p>';
+                    } else {
+                        throw new Error(confirmData.error || 'Confirmation failed');
+                    }
+                }
+            } catch (error) {
+                document.getElementById('result-message').innerHTML = 
+                    '<p><strong>Error:</strong> ' + error.message + '</p>';
+                submitButton.disabled = false;
+                submitButton.textContent = 'Purchase Reports';
+            }
+        });
+    </script>
+    </div>
+</body>
+</html>

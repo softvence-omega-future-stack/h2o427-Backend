@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Request Success</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; border: 1px solid black; padding: 20px; }
+        .header { border: 1px solid black; padding: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; }
+        h1, h2 { border-bottom: 2px solid black; padding: 10px; margin-bottom: 15px; }
+        .info-box { border: 1px solid black; padding: 10px; margin: 5px 0; }
+        .success-message { border: 2px solid black; padding: 15px; margin: 20px 0; }
+        .links { border: 1px solid black; padding: 10px; margin-top: 15px; text-align: center; }
+        a { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+    <div class="header">
+        <span>User: {{ user.username }}</span>
+        <a href="{% url 'auth:logout-page' %}">Logout</a>
+    </div>
+    
+    <h1>Request Submitted Successfully!</h1>
+    
+    <h2>Request Details</h2>
+    <div class="info-box"><p><strong>Request ID:</strong> {{ request_obj.id }}</p></div>
+    <div class="info-box"><p><strong>Name:</strong> {{ request_obj.name }}</p></div>
+    <div class="info-box"><p><strong>Email:</strong> {{ request_obj.email }}</p></div>
+    <div class="info-box"><p><strong>Status:</strong> {{ request_obj.status }}</p></div>
+    <div class="info-box"><p><strong>Submitted:</strong> {{ request_obj.created_at|date:"Y-m-d H:i" }}</p></div>
+    
+    <div class="success-message">
+        <p>Your background check request has been submitted and is being processed.</p>
+    </div>
+    
+    <div class="links">
+        <p>
+            <a href="{% url 'subscriptions:my-dashboard' %}">View Dashboard</a> | 
+            <a href="{% url 'requests:submit-page' %}">Submit Another Request</a>
+        </p>
+    </div>
+    </div>
+</body>
+</html>

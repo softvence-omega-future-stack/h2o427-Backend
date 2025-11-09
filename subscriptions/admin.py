@@ -51,36 +51,29 @@ class SubscriptionFeatureAdmin(admin.ModelAdmin):
 class SubscriptionPlanAdmin(admin.ModelAdmin):
     """Admin interface for subscription plans"""
     list_display = [
-        'name', 'plan_type', 'price_display', 'billing_cycle', 
-        'max_requests_per_month', 'feature_count', 'subscriber_count', 
-        'is_active', 'created_at'
+        'name', 'plan_type', 'price_display', 
+        'subscriber_count', 'is_active', 'created_at'
     ]
-    list_filter = ['plan_type', 'billing_cycle', 'is_active', 'created_at']
+    list_filter = ['plan_type', 'is_active', 'created_at']
     search_fields = ['name', 'description']
     readonly_fields = ['created_at', 'updated_at', 'subscriber_count', 'revenue_generated']
-    ordering = ['price']
-    inlines = [PlanFeatureInline]
+    ordering = ['price_per_report']
     
     def price_display(self, obj):
         """Format price with currency"""
-        return format_html("$<span>{}</span>", obj.price)
+        return format_html("$<span>{}</span> per report", obj.price_per_report)
     price_display.short_description = "Price"
-    price_display.admin_order_field = 'price'
-    
-    def feature_count(self, obj):
-        """Count of features in this plan"""
-        return obj.features.count()
-    feature_count.short_description = "Features"
+    price_display.admin_order_field = 'price_per_report'
     
     def subscriber_count(self, obj):
-        """Count of active subscribers"""
-        return UserSubscription.objects.filter(plan=obj, status='active').count()
-    subscriber_count.short_description = "Active Subscribers"
+        """Count of subscribers using this plan"""
+        return UserSubscription.objects.filter(plan=obj).count()
+    subscriber_count.short_description = "Subscribers"
     
     def revenue_generated(self, obj):
         """Calculate total revenue from this plan"""
         total_revenue = PaymentHistory.objects.filter(
-            subscription__plan=obj,
+            plan=obj,
             status='succeeded'
         ).aggregate(total=models.Sum('amount'))['total'] or 0
         return format_html("$<span>{}</span>", f"{total_revenue:.2f}")
@@ -91,24 +84,27 @@ class SubscriptionPlanAdmin(admin.ModelAdmin):
             'fields': ('name', 'plan_type', 'description')
         }),
         ('Pricing', {
-            'fields': ('price', 'billing_cycle')
+            'fields': ('price_per_report',)
         }),
-        ('Limits & Features', {
+        ('Basic Features', {
             'fields': (
-                'max_requests_per_month', 'priority_support', 
-                'advanced_reports', 'api_access', 'bulk_requests'
+                'identity_verification', 'ssn_trace',
+                'national_criminal_search', 'sex_offender_registry'
             )
         }),
-        ('Verification Features', {
+        ('Premium Features', {
             'fields': (
-                'basic_identity_verification', 'criminal_records_search',
                 'employment_verification', 'education_verification', 
-                'federal_records_search'
+                'unlimited_county_search'
             ),
             'classes': ('collapse',)
         }),
+        ('Support & Access', {
+            'fields': ('priority_support', 'api_access'),
+            'classes': ('collapse',)
+        }),
         ('Stripe Integration', {
-            'fields': ('stripe_price_id',),
+            'fields': ('stripe_price_id', 'stripe_product_id'),
             'classes': ('collapse',)
         }),
         ('Status & Metadata', {
@@ -126,17 +122,17 @@ class SubscriptionPlanAdmin(admin.ModelAdmin):
 class UserSubscriptionAdmin(admin.ModelAdmin):
     """Admin interface for user subscriptions"""
     list_display = [
-        'user_link', 'plan_link', 'status_badge', 'requests_used_display',
-        'start_date', 'end_date', 'created_at'
+        'user_link', 'plan_link', 'available_reports_display',
+        'free_trial_status', 'created_at'
     ]
-    list_filter = ['status', 'plan__plan_type', 'start_date', 'end_date', 'created_at']
+    list_filter = ['plan__plan_type', 'free_trial_used', 'created_at']
     search_fields = [
         'user__username', 'user__email', 'user__first_name', 'user__last_name',
-        'plan__name', 'stripe_customer_id', 'stripe_subscription_id'
+        'plan__name', 'stripe_customer_id'
     ]
     readonly_fields = [
-        'created_at', 'updated_at', 'remaining_requests', 'can_make_request_display',
-        'subscription_age', 'total_payments'
+        'created_at', 'updated_at', 'can_make_request_display',
+        'total_payments'
     ]
     date_hierarchy = 'created_at'
     ordering = ['-created_at']
@@ -144,12 +140,10 @@ class UserSubscriptionAdmin(admin.ModelAdmin):
     def user_link(self, obj):
         """Link to user admin page"""
         try:
-            # First construct the URL pattern name
             pattern_name = f"admin:{obj.user._meta.app_label}_{obj.user._meta.model_name}_change"
             url = reverse(pattern_name, args=[obj.user.pk])
             return format_html('<a href="{}">{}</a>', url, obj.user.username)
         except Exception as e:
-            # If that fails, just return the username without a link
             return obj.user.username
     user_link.short_description = "User"
     user_link.admin_order_field = 'user__username'
@@ -163,68 +157,36 @@ class UserSubscriptionAdmin(admin.ModelAdmin):
     plan_link.short_description = "Plan"
     plan_link.admin_order_field = 'plan__name'
     
-    def status_badge(self, obj):
-        """Colored status badge"""
-        colors = {
-            'active': 'green',
-            'canceled': 'red',
-            'incomplete': 'orange',
-            'past_due': 'red',
-            'unpaid': 'red',
-        }
-        color = colors.get(obj.status, 'gray')
+    def available_reports_display(self, obj):
+        """Show available reports"""
+        available = obj.available_reports
+        color = 'green' if available > 0 else 'red'
         return format_html(
-            '<span style="color: {}; font-weight: bold;">{}</span>',
-            color, obj.status.upper()
+            '<span style="color: {};">{} available</span> ({} used / {} purchased)',
+            color, available, obj.total_reports_used, obj.total_reports_purchased
         )
-    status_badge.short_description = "Status"
-    status_badge.admin_order_field = 'status'
+    available_reports_display.short_description = "Reports"
     
-    def requests_used_display(self, obj):
-        """Show usage with progress bar"""
-        if obj.plan and obj.plan.max_requests_per_month > 0 and obj.plan.max_requests_per_month < 900000:
-            percentage = (obj.requests_used_this_month / obj.plan.max_requests_per_month) * 100
-            color = 'green' if percentage < 80 else 'orange' if percentage < 100 else 'red'
-            return format_html(
-                '{}/{} <span style="color: {};">({}%)</span>',
-                obj.requests_used_this_month,
-                obj.plan.max_requests_per_month,
-                color,
-                f"{percentage:.1f}"
-            )
-        elif obj.plan:
-            # For unlimited plans
-            return format_html("<span>{} / Unlimited</span>", obj.requests_used_this_month)
-        else:
-            # No plan assigned
-            return format_html("<span>{} / No Plan</span>", obj.requests_used_this_month)
-    requests_used_display.short_description = "Requests Used"
-    
-    def remaining_requests(self, obj):
-        """Calculate remaining requests"""
-        return obj.remaining_requests
-    remaining_requests.short_description = "Remaining Requests"
+    def free_trial_status(self, obj):
+        """Show free trial status"""
+        if obj.free_trial_used:
+            if obj.free_trial_date:
+                return format_html('<span style="color: orange;">Used on {}</span>', obj.free_trial_date.strftime('%Y-%m-%d'))
+            return format_html('<span style="color: orange;">Used</span>')
+        return format_html('<span style="color: green;">Available</span>')
+    free_trial_status.short_description = "Free Trial"
     
     def can_make_request_display(self, obj):
         """Show if user can make requests"""
         if obj.can_make_request:
-            return format_html('<span style="color: green;">✓ Yes</span>')
-        return format_html('<span style="color: red;">✗ No</span>')
+            return format_html('<span style="color: green;">Yes</span>')
+        return format_html('<span style="color: red;">No</span>')
     can_make_request_display.short_description = "Can Make Request"
     
-    def subscription_age(self, obj):
-        """Calculate subscription age"""
-        from django.utils import timezone
-        if obj.start_date:
-            age = timezone.now() - obj.start_date
-            return format_html("<span>{} days</span>", age.days)
-        return "N/A"
-    subscription_age.short_description = "Subscription Age"
-    
     def total_payments(self, obj):
-        """Calculate total payments for this subscription"""
+        """Calculate total payments for this user"""
         total = PaymentHistory.objects.filter(
-            subscription=obj,
+            user=obj.user,
             status='succeeded'
         ).aggregate(total=models.Sum('amount'))['total'] or 0
         return format_html("$<span>{}</span>", f"{total:.2f}")
@@ -232,62 +194,66 @@ class UserSubscriptionAdmin(admin.ModelAdmin):
     
     fieldsets = (
         ('Subscription Details', {
-            'fields': ('user', 'plan', 'status')
+            'fields': ('user', 'plan')
         }),
-        ('Dates', {
-            'fields': ('start_date', 'end_date', 'trial_end')
+        ('Free Trial', {
+            'fields': ('free_trial_used', 'free_trial_date')
         }),
         ('Usage Tracking', {
             'fields': (
-                'requests_used_this_month', 'remaining_requests', 
+                'total_reports_purchased', 'total_reports_used', 
                 'can_make_request_display'
             )
         }),
         ('Stripe Integration', {
-            'fields': ('stripe_customer_id', 'stripe_subscription_id'),
+            'fields': ('stripe_customer_id',),
             'classes': ('collapse',)
         }),
         ('Metadata', {
-            'fields': ('created_at', 'updated_at', 'subscription_age', 'total_payments'),
+            'fields': ('created_at', 'updated_at', 'total_payments'),
             'classes': ('collapse',)
         }),
     )
     
-    actions = ['reset_usage', 'activate_subscription', 'cancel_subscription']
+    actions = ['reset_usage', 'reset_free_trial', 'add_report_credits']
     
     def reset_usage(self, request, queryset):
         """Reset usage counter for selected subscriptions"""
         count = 0
         for subscription in queryset:
-            subscription.requests_used_this_month = 0
+            subscription.total_reports_used = 0
             subscription.save()
             count += 1
         self.message_user(request, f"Reset usage for {count} subscriptions.")
     reset_usage.short_description = "Reset usage counter"
     
-    def activate_subscription(self, request, queryset):
-        """Activate selected subscriptions"""
-        count = queryset.update(status='active')
-        self.message_user(request, f"Activated {count} subscriptions.")
-    activate_subscription.short_description = "Activate subscriptions"
+    def reset_free_trial(self, request, queryset):
+        """Reset free trial for selected subscriptions"""
+        count = queryset.update(free_trial_used=False, free_trial_date=None)
+        self.message_user(request, f"Reset free trial for {count} subscriptions.")
+    reset_free_trial.short_description = "Reset free trial"
     
-    def cancel_subscription(self, request, queryset):
-        """Cancel selected subscriptions"""
-        count = queryset.update(status='canceled')
-        self.message_user(request, f"Canceled {count} subscriptions.")
-    cancel_subscription.short_description = "Cancel subscriptions"
+    def add_report_credits(self, request, queryset):
+        """Add 1 report credit to selected subscriptions"""
+        count = 0
+        for subscription in queryset:
+            subscription.total_reports_purchased += 1
+            subscription.save()
+            count += 1
+        self.message_user(request, f"Added 1 report credit to {count} subscriptions.")
+    add_report_credits.short_description = "Add 1 report credit"
 
 
 @admin.register(PaymentHistory)
 class PaymentHistoryAdmin(admin.ModelAdmin):
     """Admin interface for payment history"""
     list_display = [
-        'user_link', 'amount_display', 'currency', 'status_badge',
-        'subscription_link', 'created_at'
+        'user_link', 'amount_display', 'reports_purchased', 'plan_link',
+        'currency', 'status_badge', 'created_at'
     ]
-    list_filter = ['status', 'currency', 'created_at', 'subscription__plan__plan_type']
+    list_filter = ['status', 'currency', 'created_at', 'plan__plan_type']
     search_fields = [
-        'user__username', 'user__email', 'subscription__plan__name',
+        'user__username', 'user__email', 'plan__name',
         'stripe_payment_intent_id', 'stripe_charge_id', 'description'
     ]
     readonly_fields = ['created_at', 'updated_at']
@@ -297,23 +263,21 @@ class PaymentHistoryAdmin(admin.ModelAdmin):
     def user_link(self, obj):
         """Link to user admin page"""
         try:
-            # First construct the URL pattern name
             pattern_name = f"admin:{obj.user._meta.app_label}_{obj.user._meta.model_name}_change"
             url = reverse(pattern_name, args=[obj.user.pk])
             return format_html('<a href="{}">{}</a>', url, obj.user.username)
         except Exception as e:
-            # If that fails, just return the username without a link
             return obj.user.username
     user_link.short_description = "User"
     user_link.admin_order_field = 'user__username'
     
-    def subscription_link(self, obj):
-        """Link to subscription admin page"""
-        if obj.subscription:
-            url = reverse("admin:subscriptions_usersubscription_change", args=[obj.subscription.pk])
-            return format_html('<a href="{}">{}</a>', url, obj.subscription.plan.name)
+    def plan_link(self, obj):
+        """Link to plan admin page"""
+        if obj.plan:
+            url = reverse("admin:subscriptions_subscriptionplan_change", args=[obj.plan.pk])
+            return format_html('<a href="{}">{}</a>', url, obj.plan.name)
         return "N/A"
-    subscription_link.short_description = "Subscription"
+    plan_link.short_description = "Plan"
     
     def amount_display(self, obj):
         """Format amount with currency"""
@@ -328,6 +292,7 @@ class PaymentHistoryAdmin(admin.ModelAdmin):
             'failed': 'red',
             'pending': 'orange',
             'canceled': 'gray',
+            'refunded': 'blue',
         }
         color = colors.get(obj.status, 'gray')
         return format_html(
@@ -339,7 +304,7 @@ class PaymentHistoryAdmin(admin.ModelAdmin):
     
     fieldsets = (
         ('Payment Details', {
-            'fields': ('user', 'subscription', 'amount', 'currency', 'status')
+            'fields': ('user', 'subscription', 'plan', 'amount', 'reports_purchased', 'currency', 'status')
         }),
         ('Description & Reason', {
             'fields': ('description', 'failure_reason')

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>View Report</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; border: 1px solid black; padding: 20px; }
+        .header { border: 1px solid black; padding: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; }
+        h1, h2, h3 { border-bottom: 2px solid black; padding: 10px; margin: 15px 0 10px 0; }
+        h3 { border-bottom: 1px solid black; }
+        .section { border: 1px solid black; padding: 15px; margin-bottom: 20px; }
+        .info-box { border: 1px solid black; padding: 8px; margin: 5px 0; }
+        .links { border: 1px solid black; padding: 10px; margin-top: 15px; text-align: center; }
+        a { text-decoration: underline; }
+        .no-report { border: 2px solid black; padding: 15px; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+    <div class="header">
+        <span>User: {{ user.username }}</span>
+        <a href="{% url 'auth:logout-page' %}">Logout</a>
+    </div>
+    
+    <h1>Background Check Report</h1>
+    
+    <div class="section">
+    <h2>Subject Information</h2>
+    <div class="info-box"><p><strong>Name:</strong> {{ request_obj.name }}</p></div>
+    <div class="info-box"><p><strong>Email:</strong> {{ request_obj.email }}</p></div>
+    <div class="info-box"><p><strong>Phone:</strong> {{ request_obj.phone_number }}</p></div>
+    <div class="info-box"><p><strong>Date of Birth:</strong> {{ request_obj.dob }}</p></div>
+    <div class="info-box"><p><strong>Location:</strong> {{ request_obj.city }}, {{ request_obj.state }}</p></div>
+    </div>
+    
+    {% if report %}
+        <div class="section">
+        <h2>Report Details</h2>
+        <div class="info-box"><p><strong>Status:</strong> {{ report.verification_status }}</p></div>
+        <div class="info-box"><p><strong>Generated:</strong> {{ report.generated_at|date:"Y-m-d H:i" }}</p></div>
+        
+        <h3>Identity Verification</h3>
+        <div class="info-box"><p><strong>SSN Validation:</strong> {{ report.ssn_validation }}</p></div>
+        <div class="info-box"><p><strong>Address History:</strong> {{ report.address_history }}</p></div>
+        <div class="info-box"><p><strong>Identity Cross-Reference:</strong> {{ report.identity_cross_reference }}</p></div>
+        <div class="info-box"><p><strong>Database Match:</strong> {{ report.database_match }}</p></div>
+        
+        <h3>Criminal History</h3>
+        <div class="info-box"><p><strong>Federal Records:</strong> {{ report.federal_criminal_records }}</p></div>
+        <div class="info-box"><p><strong>State Records:</strong> {{ report.state_criminal_records }}</p></div>
+        <div class="info-box"><p><strong>County Records:</strong> {{ report.county_criminal_records }}</p></div>
+        <div class="info-box"><p><strong>Sex Offender Registry:</strong> {{ report.adult_offender_registry }}</p></div>
+        
+        {% if report.education_verified %}
+            <h3>Education Verification</h3>
+            <div class="info-box"><p><strong>Degree:</strong> {{ report.education_degree }}</p></div>
+            <div class="info-box"><p><strong>Institution:</strong> {{ report.education_institution }}</p></div>
+            <div class="info-box"><p><strong>Year:</strong> {{ report.education_graduation_year }}</p></div>
+            <div class="info-box"><p><strong>Status:</strong> {{ report.education_status }}</p></div>
+        {% endif %}
+        
+        <h3>Summary</h3>
+        <div class="info-box"><p>{{ report.final_summary }}</p></div>
+        </div>
+        
+        {% if report.pdf %}
+            <div class="links">
+                <a href="{{ report.pdf.url }}" download>Download PDF Report</a>
+            </div>
+        {% endif %}
+    {% else %}
+        <div class="no-report">
+            <p>Report not available yet. Status: {{ request_obj.status }}</p>
+        </div>
+    {% endif %}
+    
+    <div class="links">
+        <a href="{% url 'subscriptions:my-dashboard' %}">Back to Dashboard</a>
+    </div>
+    </div>
+</body>
+</html>

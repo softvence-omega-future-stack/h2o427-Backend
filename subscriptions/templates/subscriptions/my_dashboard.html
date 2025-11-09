@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; border: 1px solid black; padding: 20px; }
+        .header { border: 1px solid black; padding: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; }
+        h1, h2 { border-bottom: 2px solid black; padding: 10px; margin-bottom: 15px; }
+        .section { border: 1px solid black; padding: 15px; margin-bottom: 20px; }
+        .info-box { border: 1px solid black; padding: 10px; margin: 5px 0; }
+        table { width: 100%; border-collapse: collapse; border: 1px solid black; }
+        th, td { border: 1px solid black; padding: 8px; text-align: left; }
+        th { background: white; font-weight: bold; }
+        a { text-decoration: underline; }
+        button, .button { padding: 8px 15px; border: 2px solid black; background: white; cursor: pointer; text-decoration: none; display: inline-block; }
+        button:hover, .button:hover { background: #f0f0f0; }
+        .links { border: 1px solid black; padding: 10px; margin-top: 15px; text-align: center; }
+        .message { border: 2px solid black; padding: 10px; margin-bottom: 15px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+    <div class="header">
+        <span>User: {{ user.username }}</span>
+        <a href="{% url 'auth:logout-page' %}">Logout</a>
+    </div>
+    
+    <h1>My Dashboard</h1>
+    
+    {% if messages %}
+        {% for message in messages %}
+            <div class="message">{{ message }}</div>
+        {% endfor %}
+    {% endif %}
+    
+    <div class="section">
+    {% if subscription %}
+        <h2>Subscription Info</h2>
+        <div class="info-box"><p><strong>Plan:</strong> {{ subscription.plan.name }}</p></div>
+        <div class="info-box"><p><strong>Price per report:</strong> ${{ subscription.plan.price_per_report }}</p></div>
+        <div class="info-box"><p><strong>Free trial used:</strong> {{ subscription.free_trial_used }}</p></div>
+        <div class="info-box"><p><strong>Total reports purchased:</strong> {{ subscription.total_reports_purchased }}</p></div>
+        <div class="info-box"><p><strong>Reports used:</strong> {{ subscription.total_reports_used }}</p></div>
+        <div class="info-box"><p><strong>Available reports:</strong> {{ subscription.available_reports }}</p></div>
+        
+        <p style="margin-top: 15px;">
+            <a href="{% url 'subscriptions:purchase-page' %}" class="button">Purchase More Reports</a>
+        </p>
+    {% else %}
+        <p>No subscription found.</p>
+        <p><a href="{% url 'subscriptions:plans-page' %}" class="button">Select a Plan</a></p>
+    {% endif %}
+    </div>
+    
+    <div class="section">
+    <h2>My Background Check Requests</h2>
+    
+    {% if requests %}
+        <table>
+            <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Status</th>
+                <th>Submitted</th>
+                <th>Actions</th>
+            </tr>
+            {% for req in requests %}
+            <tr>
+                <td>{{ req.id }}</td>
+                <td>{{ req.name }}</td>
+                <td>{{ req.email }}</td>
+                <td>{{ req.status }}</td>
+                <td>{{ req.created_at|date:"Y-m-d H:i" }}</td>
+                <td>
+                    {% if req.status == 'Completed' %}
+                        <a href="{% url 'requests:view-report' req.id %}">View Report</a>
+                    {% else %}
+                        Pending
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    {% else %}
+        <p>No requests yet.</p>
+    {% endif %}
+    </div>
+    
+    <div class="links">
+        <a href="{% url 'requests:submit-page' %}" class="button">Submit New Background Check Request</a>
+    </div>
+    </div>
+</body>
+</html>

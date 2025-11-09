@@ -227,6 +227,11 @@ STRIPE_TEST_PUBLIC_KEY = os.getenv('STRIPE_TEST_PUBLIC_KEY', 'your-public-key') 
 STRIPE_TEST_SECRET_KEY = os.getenv('STRIPE_TEST_SECRET_KEY', 'your-secret-key')  # Replace with your actual test secret key
 STRIPE_TEST_ENDPOINT_SECRET = os.getenv('STRIPE_TEST_ENDPOINT_SECRET', 'whsec_74be980122a5c652a8712d0fc6b1f25c04877e635901f4f6bcde6af1909a1179')  # Webhook signing secret
 
+# Standard Stripe keys (used by views)
+STRIPE_PUBLISHABLE_KEY = os.getenv('STRIPE_PUBLISHABLE_KEY', STRIPE_TEST_PUBLIC_KEY)
+STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY', STRIPE_TEST_SECRET_KEY)
+STRIPE_ENDPOINT_SECRET = os.getenv('STRIPE_ENDPOINT_SECRET', STRIPE_TEST_ENDPOINT_SECRET)
+
 
 
 # Email settings for sending password reset link

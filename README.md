@@ -41,7 +41,7 @@ A simplified Django REST API application for managing background check requests 
 
 ## Quick Start
 
-### Option 1: Docker (Recommended) 🐳
+### Option 1: Docker (Recommended) 
 
 1. **Install Docker Desktop:**
    - Windows/Mac: [Download Docker Desktop](https://www.docker.com/products/docker-desktop)
@@ -65,11 +65,11 @@ A simplified Django REST API application for managing background check requests 
    ```
 
 5. **Access the Application:**
-   - **Swagger UI:** `http://localhost:8000/swagger/` ⭐
+   - **Swagger UI:** `http://localhost:8000/swagger/` 
    - **Admin Panel:** `http://localhost:8000/admin/`
    - **Via Nginx:** `http://localhost/` (reverse proxy)
 
-**📖 See `DOCKER_SETUP.md` for complete Docker documentation**
+** See `DOCKER_SETUP.md` for complete Docker documentation**
 
 ### Option 2: Local Development
 
@@ -100,12 +100,12 @@ A simplified Django REST API application for managing background check requests 
    ```
 
 6. **Access the Application:**
-   - **Swagger UI:** `http://127.0.0.1:8000/swagger/` ⭐ **Start here!**
+   - **Swagger UI:** `http://127.0.0.1:8000/swagger/`  **Start here!**
    - **ReDoc:** `http://127.0.0.1:8000/redoc/`
    - **API Base:** `http://127.0.0.1:8000/api/`
    - **Admin Panel:** `http://127.0.0.1:8000/admin/`
 
-## 📚 API Documentation
+## API Documentation
 
 ### Quick Test with Swagger
 1. Open http://127.0.0.1:8000/swagger/

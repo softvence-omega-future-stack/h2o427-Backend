@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login</title>
+</head>
+<body>
+    <h1>Login</h1>
+    
+    {% if messages %}
+        {% for message in messages %}
+            <p><strong>{{ message }}</strong></p>
+        {% endfor %}
+    {% endif %}
+    
+    <form method="post">
+        {% csrf_token %}
+        
+        <label>Email:</label><br>
+        <input type="email" name="email" required><br><br>
+        
+        <label>Password:</label><br>
+        <input type="password" name="password" required><br><br>
+        
+        <button type="submit">Login</button>
+    </form>
+    
+    <!DOCTYPE html>
+<html>
+<head>
+    <title>Login</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .container { max-width: 400px; margin: 0 auto; border: 1px solid black; padding: 20px; }
+        h1 { border: 1px solid black; padding: 10px; margin-bottom: 20px; }
+        form { border: 1px solid black; padding: 15px; }
+        label { display: block; margin-top: 10px; border-bottom: 1px solid black; padding: 5px; }
+        input { width: 100%; padding: 8px; margin-top: 5px; border: 1px solid black; }
+        button { width: 100%; padding: 10px; margin-top: 15px; border: 2px solid black; background: white; cursor: pointer; }
+        button:hover { background: #f0f0f0; }
+        .message { border: 2px solid black; padding: 10px; margin-bottom: 15px; }
+        .links { border: 1px solid black; padding: 10px; margin-top: 15px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+    <h1>Login</h1>
+    
+    {% if messages %}
+        {% for message in messages %}
+            <div class="message">{{ message }}</div>
+        {% endfor %}
+    {% endif %}
+    
+    <form method="post">
+        {% csrf_token %}
+        
+        <label>Email:</label><br>
+        <input type="email" name="email" required><br><br>
+        
+        <label>Password:</label><br>
+        <input type="password" name="password" required><br><br>
+        
+        <button type="submit">Login</button>
+    </form>
+    
+    <div class="links">
+        <p>Don't have an account? <a href="{% url 'auth:register-page' %}">Register</a></p>
+    </div>
+    </div>
+</body>
+</html>
+</body>
+</html>

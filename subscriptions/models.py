@@ -6,49 +6,45 @@ from datetime import timedelta
 User = get_user_model()
 
 class SubscriptionPlan(models.Model):
+    """Model for per-report subscription plans"""
     PLAN_TYPES = [
         ('basic', 'Basic'),
         ('premium', 'Premium'),
-        ('enterprise', 'Enterprise'),
-    ]
-    
-    BILLING_CYCLES = [
-        ('monthly', 'Monthly'),
-        ('yearly', 'Yearly'),
     ]
     
     name = models.CharField(max_length=100)
     plan_type = models.CharField(max_length=20, choices=PLAN_TYPES, default='basic')
-    price = models.DecimalField(max_digits=10, decimal_places=2)
-    billing_cycle = models.CharField(max_length=10, choices=BILLING_CYCLES, default='monthly')
+    price_per_report = models.DecimalField(max_digits=10, decimal_places=2, default=25.00, help_text="Price charged per background check report")
     description = models.TextField()
     
-    # Feature limits
-    max_requests_per_month = models.IntegerField(default=5)
-    priority_support = models.BooleanField(default=False)
-    advanced_reports = models.BooleanField(default=False)
-    api_access = models.BooleanField(default=False)
-    bulk_requests = models.BooleanField(default=False)
+    # Features - Basic Plan
+    identity_verification = models.BooleanField(default=False, help_text="Identity Verification")
+    ssn_trace = models.BooleanField(default=False, help_text="SSN Trace")
+    national_criminal_search = models.BooleanField(default=False, help_text="National Criminal Search")
+    sex_offender_registry = models.BooleanField(default=False, help_text="Sex Offender Registry")
     
-    # Verification features
-    basic_identity_verification = models.BooleanField(default=True)
-    criminal_records_search = models.BooleanField(default=True)
-    employment_verification = models.BooleanField(default=False)
-    education_verification = models.BooleanField(default=False)
-    federal_records_search = models.BooleanField(default=False)
+    # Features - Premium Plan (includes all Basic)
+    employment_verification = models.BooleanField(default=False, help_text="Employment History")
+    education_verification = models.BooleanField(default=False, help_text="Education Verification")
+    unlimited_county_search = models.BooleanField(default=False, help_text="Unlimited County Criminal Search")
+    
+    # Support and Access
+    priority_support = models.BooleanField(default=False)
+    api_access = models.BooleanField(default=False)
     
     # Stripe integration
     stripe_price_id = models.CharField(max_length=255, blank=True, null=True)
+    stripe_product_id = models.CharField(max_length=255, blank=True, null=True)
     
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['price']
+        ordering = ['price_per_report']
 
     def __str__(self):
-        return f"{self.name} - ${self.price}/{self.billing_cycle}"
+        return f"{self.name} - ${self.price_per_report} per report"
     
     def has_feature(self, feature_name):
         """Check if this plan has a specific feature"""
@@ -62,31 +58,20 @@ class SubscriptionPlan(models.Model):
         
 # Subscription Status Choices
 class UserSubscription(models.Model):
-    SUBSCRIPTION_STATUS = [
-        ('active', 'Active'),
-        ('inactive', 'Inactive'),
-        ('canceled', 'Canceled'),
-        ('past_due', 'Past Due'),
-        ('unpaid', 'Unpaid'),
-        ('trialing', 'Trialing'),
-    ]
-    
+    """User's subscription for per-report purchases"""
     user = models.OneToOneField(get_user_model(), on_delete=models.CASCADE, related_name='subscription')
     plan = models.ForeignKey('SubscriptionPlan', on_delete=models.SET_NULL, null=True, blank=True)
     
-    # Stripe integration
-    stripe_subscription_id = models.CharField(max_length=255, blank=True, null=True)
+    # Stripe integration (for payment processing)
     stripe_customer_id = models.CharField(max_length=255, blank=True, null=True)
     
-    # Subscription details
-    status = models.CharField(max_length=20, choices=SUBSCRIPTION_STATUS, default='inactive')
-    start_date = models.DateTimeField(null=True, blank=True)
-    end_date = models.DateTimeField(null=True, blank=True)
-    trial_end = models.DateTimeField(null=True, blank=True)
+    # Free trial tracking
+    free_trial_used = models.BooleanField(default=False, help_text="Has the user used their 1 free search trial")
+    free_trial_date = models.DateTimeField(null=True, blank=True, help_text="When the free trial was used")
     
-    # Usage tracking
-    requests_used_this_month = models.IntegerField(default=0)
-    last_reset_date = models.DateTimeField(default=timezone.now)
+    # Usage tracking (total reports purchased, not monthly)
+    total_reports_purchased = models.IntegerField(default=0, help_text="Total number of reports user has purchased")
+    total_reports_used = models.IntegerField(default=0, help_text="Total number of reports user has used")
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -95,49 +80,44 @@ class UserSubscription(models.Model):
         return f"{self.user.username} - {self.plan.name if self.plan else 'No Plan'}"
     
     @property
-    def is_active(self):
-        """Check if subscription is currently active"""
-        if self.status == 'active':
-            if self.end_date and self.end_date < timezone.now():
-                return False
+    def can_use_free_trial(self):
+        """Check if user can use their free trial search"""
+        return not self.free_trial_used
+    
+    def use_free_trial(self):
+        """Mark free trial as used"""
+        if not self.free_trial_used:
+            self.free_trial_used = True
+            self.free_trial_date = timezone.now()
+            self.save()
             return True
         return False
     
     @property
-    def can_make_request(self):
-        """Check if user can make a new request based on their plan limits"""
-        if not self.is_active or not self.plan:
-            return False
-        
-        # Reset monthly usage if needed
-        self.reset_monthly_usage_if_needed()
-        
-        return self.requests_used_this_month < self.plan.max_requests_per_month
+    def available_reports(self):
+        """Get number of reports available to use"""
+        return self.total_reports_purchased - self.total_reports_used
     
     @property
-    def remaining_requests(self):
-        """Get remaining requests for current month"""
-        if not self.plan:
-            return 0
-        
-        self.reset_monthly_usage_if_needed()
-        return max(0, self.plan.max_requests_per_month - self.requests_used_this_month)
-    
-    def reset_monthly_usage_if_needed(self):
-        """Reset monthly usage if a new month has started"""
-        now = timezone.now()
-        if self.last_reset_date.month != now.month or self.last_reset_date.year != now.year:
-            self.requests_used_this_month = 0
-            self.last_reset_date = now
-            self.save()
+    def can_make_request(self):
+        """Check if user can make a new request (has free trial or purchased reports)"""
+        return self.can_use_free_trial or self.available_reports > 0
     
     def increment_usage(self):
-        """Increment the request usage counter"""
-        self.requests_used_this_month += 1
-        self.save()
+        """Increment the report usage counter"""
+        if self.can_use_free_trial:
+            self.use_free_trial()
+        elif self.available_reports > 0:
+            self.total_reports_used += 1
+            self.save()
+        else:
+            raise ValueError("No reports available. Please purchase more reports.")
+
+
 
 
 class PaymentHistory(models.Model):
+    """Track all per-report purchase payments"""
     PAYMENT_STATUS = [
         ('succeeded', 'Succeeded'),
         ('pending', 'Pending'),
@@ -148,9 +128,11 @@ class PaymentHistory(models.Model):
     
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='payments')
     subscription = models.ForeignKey(UserSubscription, on_delete=models.SET_NULL, null=True, blank=True)
+    plan = models.ForeignKey(SubscriptionPlan, on_delete=models.SET_NULL, null=True, blank=True, help_text="Which plan was used for this purchase")
     
     # Payment details
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    amount = models.DecimalField(max_digits=10, decimal_places=2, help_text="Amount paid for the report")
+    reports_purchased = models.IntegerField(default=1, help_text="Number of reports purchased in this transaction")
     currency = models.CharField(max_length=3, default='USD')
     status = models.CharField(max_length=20, choices=PAYMENT_STATUS)
     
@@ -167,9 +149,10 @@ class PaymentHistory(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        verbose_name_plural = 'Payment Histories'
 
     def __str__(self):
-        return f"{self.user.username} - ${self.amount} ({self.status})"
+        return f"{self.user.username} - ${self.amount} ({self.reports_purchased} report{'s' if self.reports_purchased > 1 else ''}) - {self.status}"
 
 class SubscriptionFeature(models.Model):
     """Model to track individual features and their availability per plan"""

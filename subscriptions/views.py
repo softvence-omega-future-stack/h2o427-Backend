@@ -11,15 +11,16 @@ from django.conf import settings
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
-from .models import SubscriptionPlan, UserSubscription, PaymentHistory, SubscriptionFeature
+from .models import SubscriptionPlan, UserSubscription, PaymentHistory
 from .serializers import (
     SubscriptionPlanSerializer, UserSubscriptionSerializer, PaymentHistorySerializer,
     CreateSubscriptionSerializer, UpdateSubscriptionSerializer, CancelSubscriptionSerializer,
-    SubscriptionUsageSerializer, SubscriptionStatsSerializer, StripeCustomerSerializer
+    SubscriptionUsageSerializer, SubscriptionStatsSerializer, StripeCustomerSerializer,
+    PurchaseReportSerializer
 )
 
 # Configure Stripe
-stripe.api_key = settings.STRIPE_TEST_SECRET_KEY
+stripe.api_key = settings.STRIPE_SECRET_KEY
 
 User = get_user_model()
 
@@ -28,7 +29,7 @@ class SubscriptionPlansView(APIView):
     permission_classes = [permissions.AllowAny]
     
     @swagger_auto_schema(
-        operation_description="Get all available subscription plans",
+        operation_description="Get all available subscription plans with per-report pricing",
         operation_summary="List Subscription Plans",
         responses={
             200: openapi.Response(
@@ -38,19 +39,17 @@ class SubscriptionPlansView(APIView):
                         {
                             "id": 1,
                             "name": "Basic Plan",
-                            "price": "9.99",
-                            "billing_cycle": "monthly",
-                            "max_requests_per_month": 10,
-                            "features": ["Feature 1", "Feature 2"],
+                            "price_per_report": "25.00",
+                            "plan_type": "basic",
+                            "features": ["Identity Verification", "SSN Trace", "National Criminal Search"],
                             "is_active": True
                         },
                         {
                             "id": 2,
                             "name": "Premium Plan",
-                            "price": "29.99",
-                            "billing_cycle": "monthly",
-                            "max_requests_per_month": 50,
-                            "features": ["Feature 1", "Feature 2", "Feature 3"],
+                            "price_per_report": "50.00",
+                            "plan_type": "premium",
+                            "features": ["All Basic features", "Employment Verification", "Education Verification"],
                             "is_active": True
                         }
                     ]
@@ -60,7 +59,7 @@ class SubscriptionPlansView(APIView):
         tags=['Subscriptions']
     )
     def get(self, request):
-        plans = SubscriptionPlan.objects.filter(is_active=True).order_by('price')
+        plans = SubscriptionPlan.objects.filter(is_active=True).order_by('price_per_report')
         serializer = SubscriptionPlanSerializer(plans, many=True)
         return Response(serializer.data)
 
@@ -103,78 +102,35 @@ class UserSubscriptionView(APIView):
         }
     )
     def post(self, request):
-        """Create a new subscription for the user"""
+        """Create a new subscription for the user - Per-Report Payment Model"""
         serializer = CreateSubscriptionSerializer(data=request.data)
         
         if serializer.is_valid():
             try:
                 plan_id = serializer.validated_data['plan_id']
-                payment_method_id = serializer.validated_data.get('payment_method_id')
-                trial_period_days = serializer.validated_data.get('trial_period_days', 0)
                 
                 plan = SubscriptionPlan.objects.get(id=plan_id)
                 
-                # Check if user already has an active subscription
-                existing_subscription = UserSubscription.objects.filter(
-                    user=request.user, 
-                    status='active'
-                ).first()
-                
-                if existing_subscription:
-                    return Response(
-                        {'error': 'User already has an active subscription'}, 
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-                
-                # Create or get Stripe customer
-                customer = self.get_or_create_stripe_customer(request.user)
-                
-                # Create Stripe subscription
-                subscription_data = {
-                    'customer': customer.id,
-                    'items': [{'price': plan.stripe_price_id}],
-                    'payment_behavior': 'default_incomplete',
-                    'payment_settings': {'save_default_payment_method': 'on_subscription'},
-                    'expand': ['latest_invoice.payment_intent'],
-                }
-                
-                if trial_period_days > 0:
-                    subscription_data['trial_period_days'] = trial_period_days
-                
-                if payment_method_id:
-                    subscription_data['default_payment_method'] = payment_method_id
-                
-                stripe_subscription = stripe.Subscription.create(**subscription_data)
-                
-                # Create or update local subscription
-                user_subscription, created = UserSubscription.objects.get_or_create(
+                # Get or create user subscription (Per-Report Model - No Stripe subscription needed)
+                subscription, created = UserSubscription.objects.get_or_create(
                     user=request.user,
-                    defaults={
-                        'plan': plan,
-                        'stripe_subscription_id': stripe_subscription.id,
-                        'stripe_customer_id': customer.id,
-                        'status': 'active' if trial_period_days > 0 else 'incomplete',
-                        'start_date': timezone.now(),
-                        'trial_end': timezone.now() + timedelta(days=trial_period_days) if trial_period_days > 0 else None
-                    }
+                    defaults={'plan': plan}
                 )
                 
                 if not created:
-                    user_subscription.plan = plan
-                    user_subscription.stripe_subscription_id = stripe_subscription.id
-                    user_subscription.stripe_customer_id = customer.id
-                    user_subscription.status = 'active' if trial_period_days > 0 else 'incomplete'
-                    user_subscription.start_date = timezone.now()
-                    user_subscription.trial_end = timezone.now() + timedelta(days=trial_period_days) if trial_period_days > 0 else None
-                    user_subscription.save()
+                    # Update existing subscription with new plan
+                    subscription.plan = plan
+                    subscription.save()
+                    message = 'Subscription plan updated successfully'
+                else:
+                    message = 'Subscription created successfully'
                 
                 response_data = {
-                    'subscription': UserSubscriptionSerializer(user_subscription).data,
-                    'client_secret': stripe_subscription.latest_invoice.payment_intent.client_secret if hasattr(stripe_subscription.latest_invoice, 'payment_intent') else None,
-                    'stripe_subscription_id': stripe_subscription.id
+                    'message': message,
+                    'subscription': UserSubscriptionSerializer(subscription).data
                 }
                 
-                return Response(response_data, status=status.HTTP_201_CREATED)
+                return Response(response_data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
                 
             except SubscriptionPlan.DoesNotExist:
                 return Response({'error': 'Plan not found'}, status=status.HTTP_404_NOT_FOUND)
@@ -318,12 +274,12 @@ class SubscriptionUsageView(APIView):
             
             usage_data = {
                 'current_plan': subscription.plan,
-                'requests_used_this_month': subscription.requests_used_this_month,
-                'requests_remaining': subscription.remaining_requests,
-                'max_requests_per_month': subscription.plan.max_requests_per_month if subscription.plan else 0,
-                'can_make_request': subscription.can_make_request,
-                'subscription_status': subscription.status,
-                'next_billing_date': subscription.end_date
+                'total_reports_purchased': subscription.total_reports_purchased,
+                'total_reports_used': subscription.total_reports_used,
+                'available_reports': subscription.available_reports,
+                'free_trial_used': subscription.free_trial_used,
+                'can_use_free_trial': subscription.can_use_free_trial,
+                'can_make_request': subscription.can_make_request
             }
             
             serializer = SubscriptionUsageSerializer(usage_data)
@@ -332,12 +288,12 @@ class SubscriptionUsageView(APIView):
         except UserSubscription.DoesNotExist:
             return Response({
                 'current_plan': None,
-                'requests_used_this_month': 0,
-                'requests_remaining': 0,
-                'max_requests_per_month': 0,
-                'can_make_request': False,
-                'subscription_status': 'inactive',
-                'next_billing_date': None
+                'total_reports_purchased': 0,
+                'total_reports_used': 0,
+                'available_reports': 0,
+                'free_trial_used': False,
+                'can_use_free_trial': True,
+                'can_make_request': True  # New users can use free trial
             })
 
 class PaymentHistoryView(APIView):
@@ -385,11 +341,11 @@ class StripeWebhookView(APIView):
         
         try:
             event = stripe.Webhook.construct_event(
-                payload, sig_header, settings.STRIPE_TEST_ENDPOINT_SECRET
+                payload, sig_header, settings.STRIPE_ENDPOINT_SECRET
             )
         except ValueError:
             return Response({'error': 'Invalid payload'}, status=status.HTTP_400_BAD_REQUEST)
-        except stripe.error.SignatureVerificationError:
+        except stripe.error.SignatureVerificationError as e:
             return Response({'error': 'Invalid signature'}, status=status.HTTP_400_BAD_REQUEST)
         
         # Handle the event
@@ -562,7 +518,7 @@ class AdminSubscriptionStatsView(APIView):
     def get(self, request):
         # Calculate statistics
         total_subscribers = UserSubscription.objects.count()
-        active_subscribers = UserSubscription.objects.filter(status='active').count()
+        active_subscribers = UserSubscription.objects.filter(plan__isnull=False).count()
         
         # Calculate revenue
         total_revenue = PaymentHistory.objects.filter(
@@ -578,7 +534,7 @@ class AdminSubscriptionStatsView(APIView):
         
         # Most popular plan
         popular_plan_data = UserSubscription.objects.filter(
-            status='active'
+            plan__isnull=False
         ).values('plan__name').annotate(
             count=Count('plan')
         ).order_by('-count').first()
@@ -649,15 +605,15 @@ class CreateCheckoutSessionView(APIView):
                     status=status.HTTP_404_NOT_FOUND
                 )
             
-            # Check if user already has an active subscription
-            existing_subscription = UserSubscription.objects.filter(
-                user=request.user, 
-                status='active'
-            ).first()
+            # Get or create user subscription
+            subscription, created = UserSubscription.objects.get_or_create(
+                user=request.user,
+                defaults={'plan': plan}
+            )
             
-            if existing_subscription:
+            if not created and subscription.plan:
                 return Response(
-                    {'error': 'User already has an active subscription'}, 
+                    {'error': 'User already has a subscription. Use purchase-report endpoint to buy more reports.'}, 
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
@@ -823,10 +779,126 @@ class VerifyCheckoutSessionView(APIView):
                 'subscription': UserSubscriptionSerializer(user_subscription).data
             })
             
-        except stripe.error.InvalidRequestError as e:
+        except Exception as e:
+            # Handle Stripe errors and other exceptions
+            error_message = str(e)
+            if 'No such checkout.session' in error_message or 'session_id' in error_message.lower():
+                return Response(
+                    {'error': 'Invalid or expired checkout session ID'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             return Response(
-                {'error': 'Invalid session ID'}, 
+                {'error': error_message}, 
                 status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+# ==================== Per-Report Purchase Views ====================
+
+class PurchaseReportView(APIView):
+    """Purchase background check reports"""
+    permission_classes = [permissions.IsAuthenticated]
+    
+    @swagger_auto_schema(
+        operation_summary="Purchase Reports",
+        operation_description="Create Stripe Checkout Session for purchasing background check reports. Redirects to Stripe's official checkout page.",
+        operation_id="subscription_purchase_reports",
+        tags=['Subscriptions'],
+        request_body=PurchaseReportSerializer,
+        responses={
+            200: openapi.Response(
+                description="Checkout session created - redirect user to checkout_url",
+                examples={
+                    "application/json": {
+                        "checkout_url": "https://checkout.stripe.com/c/pay/xxx",
+                        "session_id": "cs_test_xxx",
+                        "amount": 25.00,
+                        "quantity": 1,
+                        "plan": "Basic Plan"
+                    }
+                }
+            ),
+            400: "Bad request",
+            404: "Plan not found"
+        }
+    )
+    def post(self, request):
+        """Create Stripe Checkout Session for report purchase"""
+        serializer = PurchaseReportSerializer(data=request.data)
+        
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            plan_id = serializer.validated_data['plan_id']
+            quantity = serializer.validated_data.get('quantity', 1)
+            
+            # Get plan
+            plan = SubscriptionPlan.objects.get(id=plan_id, is_active=True)
+            
+            # Calculate amount
+            amount = float(plan.price_per_report) * quantity
+            
+            # Get or create user subscription
+            subscription, created = UserSubscription.objects.get_or_create(
+                user=request.user,
+                defaults={'plan': plan}
+            )
+            
+            # Update plan if changed
+            if subscription.plan != plan:
+                subscription.plan = plan
+                subscription.save()
+            
+            # Get or create Stripe customer
+            if not subscription.stripe_customer_id:
+                customer = stripe.Customer.create(
+                    email=request.user.email,
+                    name=f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username,
+                    metadata={'user_id': request.user.id}
+                )
+                subscription.stripe_customer_id = customer.id
+                subscription.save()
+            
+            # Create Stripe Checkout Session
+            checkout_session = stripe.checkout.Session.create(
+                customer=subscription.stripe_customer_id,
+                payment_method_types=['card'],
+                line_items=[{
+                    'price_data': {
+                        'currency': 'usd',
+                        'unit_amount': int(float(plan.price_per_report) * 100),  # Convert to cents
+                        'product_data': {
+                            'name': f"{plan.name} - Background Check Report",
+                            'description': plan.description,
+                        },
+                    },
+                    'quantity': quantity,
+                }],
+                mode='payment',
+                success_url=request.build_absolute_uri('/api/subscriptions/confirm-payment/?session_id={CHECKOUT_SESSION_ID}'),
+                cancel_url=request.build_absolute_uri('/api/subscriptions/purchase-cancelled/'),
+                metadata={
+                    'user_id': request.user.id,
+                    'plan_id': plan.id,
+                    'quantity': quantity,
+                    'subscription_id': subscription.id
+                }
+            )
+            
+            return Response({
+                'checkout_url': checkout_session.url,
+                'session_id': checkout_session.id,
+                'amount': amount,
+                'quantity': quantity,
+                'plan': plan.name,
+                'plan_price': float(plan.price_per_report)
+            }, status=status.HTTP_200_OK)
+            
+        except SubscriptionPlan.DoesNotExist:
+            return Response(
+                {'error': 'Plan not found'}, 
+                status=status.HTTP_404_NOT_FOUND
             )
         except Exception as e:
             return Response(
@@ -834,6 +906,194 @@ class VerifyCheckoutSessionView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+
+class ConfirmPaymentView(APIView):
+    """Confirm payment from Stripe Checkout Session and add reports to user account"""
+    permission_classes = [permissions.AllowAny]  # Changed to AllowAny for redirect callback
+    
+    @swagger_auto_schema(
+        operation_summary="Confirm Payment",
+        operation_description="Confirm payment was successful from Stripe Checkout and add purchased reports to user account.",
+        operation_id="subscription_confirm_payment",
+        tags=['Subscriptions'],
+        manual_parameters=[
+            openapi.Parameter('session_id', openapi.IN_QUERY, description="Stripe Checkout Session ID", type=openapi.TYPE_STRING, required=True)
+        ],
+        responses={
+            200: UserSubscriptionSerializer,
+            400: "Bad request",
+            404: "Payment not found"
+        }
+    )
+    def get(self, request):
+        """Verify Stripe Checkout Session and add reports"""
+        session_id = request.query_params.get('session_id')
+        
+        if not session_id:
+            return Response(
+                {'error': 'Checkout session ID is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Retrieve checkout session from Stripe
+            checkout_session = stripe.checkout.Session.retrieve(session_id)
+            
+            # Check if payment was successful
+            if checkout_session.payment_status != 'paid':
+                return Response(
+                    {'error': 'Payment not completed', 'status': checkout_session.payment_status}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Get metadata
+            user_id = int(checkout_session.metadata.get('user_id'))
+            plan_id = int(checkout_session.metadata.get('plan_id'))
+            quantity = int(checkout_session.metadata.get('quantity', 1))
+            subscription_id = int(checkout_session.metadata.get('subscription_id'))
+            
+            # Get user and subscription
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            user = User.objects.get(id=user_id)
+            subscription = UserSubscription.objects.get(id=subscription_id)
+            plan = SubscriptionPlan.objects.get(id=plan_id)
+            
+            # Add reports to subscription
+            subscription.total_reports_purchased += quantity
+            subscription.save()
+            
+            # Calculate amount
+            amount = float(plan.price_per_report) * quantity
+            
+            # Create payment history
+            PaymentHistory.objects.create(
+                user=user,
+                subscription=subscription,
+                plan=plan,
+                amount=amount,
+                reports_purchased=quantity,
+                currency='USD',
+                status='succeeded',
+                stripe_payment_intent_id=checkout_session.payment_intent,
+                description=f"Purchase of {quantity} {plan.name} report{'s' if quantity > 1 else ''}"
+            )
+            
+            return Response({
+                'message': 'Payment confirmed successfully',
+                'reports_added': quantity,
+                'available_reports': subscription.total_reports_purchased - subscription.total_reports_used,
+                'subscription': UserSubscriptionSerializer(subscription).data
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            # Handle all errors including Stripe errors
+            error_message = str(e)
+            if 'checkout.session' in error_message.lower() or 'session_id' in error_message.lower():
+                return Response(
+                    {'error': 'Invalid or expired checkout session'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            return Response(
+                {'error': f'Error processing payment: {error_message}'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+class PurchaseCancelledView(APIView):
+    """Handle cancelled purchase"""
+    permission_classes = [permissions.AllowAny]
+    
+    def get(self, request):
+        """User cancelled the purchase"""
+        return Response({
+            'message': 'Purchase cancelled',
+            'status': 'cancelled'
+        }, status=status.HTTP_200_OK)
+
+
+# ==================== TEST ENDPOINT (For API Testing Without Stripe) ====================
+
+class TestPurchaseReportsView(APIView):
+    """TEST ONLY: Direct purchase without Stripe payment - Use for API testing"""
+    permission_classes = [permissions.IsAuthenticated]
+    
+    @swagger_auto_schema(
+        operation_summary="Test Purchase Reports (No Stripe)",
+        operation_description="FOR TESTING ONLY: Purchase reports directly without Stripe payment. Use this endpoint when testing API flow in Postman.",
+        operation_id="test_purchase_reports",
+        tags=['Subscriptions - Testing'],
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['quantity'],
+            properties={
+                'quantity': openapi.Schema(type=openapi.TYPE_INTEGER, description='Number of reports to purchase', minimum=1)
+            }
+        ),
+        responses={
+            200: "Reports added successfully",
+            400: "Bad request",
+            404: "Subscription not found"
+        }
+    )
+    def post(self, request):
+        """Add reports to account without payment - FOR TESTING ONLY"""
+        quantity = request.data.get('quantity')
+        
+        if not quantity or quantity < 1:
+            return Response(
+                {'error': 'Valid quantity is required (minimum 1)'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Get user subscription
+            subscription = UserSubscription.objects.get(user=request.user)
+            plan = subscription.plan
+            
+            if not plan:
+                return Response(
+                    {'error': 'Please select a plan first'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Calculate amount (for reference only, no payment)
+            amount = float(plan.price_per_report) * quantity
+            
+            # Add reports directly
+            subscription.total_reports_purchased += quantity
+            subscription.save()
+            
+            # Create payment history record (marked as test)
+            PaymentHistory.objects.create(
+                user=request.user,
+                subscription=subscription,
+                plan=plan,
+                amount=amount,
+                reports_purchased=quantity,
+                currency='USD',
+                status='succeeded',
+                stripe_payment_intent_id=f'test_{timezone.now().timestamp()}',
+                description=f"TEST: Purchase of {quantity} {plan.name} report{'s' if quantity > 1 else ''}"
+            )
+            
+            return Response({
+                'message': f'TEST: Successfully added {quantity} report{"s" if quantity > 1 else ""}',
+                'note': 'This is a test purchase - no actual payment was processed',
+                'subscription': UserSubscriptionSerializer(subscription).data,
+                'amount_reference': f'${amount:.2f} (not charged)'
+            }, status=status.HTTP_200_OK)
+            
+        except UserSubscription.DoesNotExist:
+            return Response(
+                {'error': 'No subscription found. Please select a plan first.'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'error': str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 
 # ==================== Template-Based Views (MVT Pattern) ====================
@@ -843,50 +1103,46 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 
 def plans_list_view(request):
-    """Display all subscription plans in a beautiful UI"""
+    """Display all subscription plans in a beautiful UI - Per-Report Pricing"""
     if not request.user.is_authenticated:
         return redirect('/admin/login/')
     
-    plans = SubscriptionPlan.objects.filter(is_active=True).order_by('price').prefetch_related('features')
+    plans = SubscriptionPlan.objects.filter(is_active=True).order_by('price_per_report')
     
     # Convert plans to dict format with features list
     plans_data = []
     for plan in plans:
-        # Build feature list from plan's boolean fields and PlanFeature relationships
+        # Build feature list from plan's boolean fields
         feature_list = []
         
         # Add features based on boolean fields
-        if plan.basic_identity_verification:
-            feature_list.append({'name': 'Basic identity verification'})
-        if plan.criminal_records_search:
-            feature_list.append({'name': 'County criminal records search'})
-        if plan.federal_records_search:
-            feature_list.append({'name': 'Federal, state & county criminal records'})
+        if plan.identity_verification:
+            feature_list.append({'name': 'Identity Verification'})
+        if plan.ssn_trace:
+            feature_list.append({'name': 'SSN Trace'})
+        if plan.national_criminal_search:
+            feature_list.append({'name': 'National Criminal Search'})
+        if plan.sex_offender_registry:
+            feature_list.append({'name': 'Sex Offender Registry'})
         if plan.employment_verification:
-            feature_list.append({'name': 'Employment history verification'})
+            feature_list.append({'name': 'Employment History Verification'})
         if plan.education_verification:
-            feature_list.append({'name': 'Education verification'})
-        if plan.api_access:
-            feature_list.append({'name': 'API Access'})
+            feature_list.append({'name': 'Education Verification'})
+        if plan.unlimited_county_search:
+            feature_list.append({'name': 'Unlimited County Criminal Search'})
         if plan.priority_support:
             feature_list.append({'name': 'Priority Support'})
         else:
-            feature_list.append({'name': 'Standard support'})
-        if plan.advanced_reports:
-            feature_list.append({'name': '30-day report access'})
-        
-        # Add features from PlanFeature relationships if any
-        for pf in plan.features.all():
-            if pf.is_included:
-                feature_list.append({'name': pf.feature.name})
+            feature_list.append({'name': 'Standard Support'})
+        if plan.api_access:
+            feature_list.append({'name': 'API Access'})
         
         plans_data.append({
             'id': plan.id,
             'name': plan.name,
-            'price': plan.price,
-            'billing_interval': plan.billing_cycle,
+            'price': plan.price_per_report,
+            'billing_interval': 'per report',
             'description': plan.description,
-            'max_requests_per_month': plan.max_requests_per_month,
             'features': feature_list,
             'stripe_price_id': plan.stripe_price_id,
         })
@@ -906,14 +1162,14 @@ def subscribe_plan_view(request):
         try:
             plan = SubscriptionPlan.objects.get(id=plan_id)
             
-            # Check if user already has an active subscription
-            existing_subscription = UserSubscription.objects.filter(
+            # Get or create user subscription
+            subscription, created = UserSubscription.objects.get_or_create(
                 user=request.user,
-                status='active'
-            ).first()
+                defaults={'plan': plan}
+            )
             
-            if existing_subscription:
-                messages.warning(request, 'You already have an active subscription!')
+            if not created and subscription.plan:
+                messages.warning(request, 'You already have a subscription! You can purchase more reports.')
                 return redirect('subscriptions:subscription_dashboard')
             
             # Create or get Stripe customer
@@ -1017,24 +1273,27 @@ def subscription_cancel_view(request):
 
 @login_required
 def subscription_dashboard_view(request):
-    """Display user's subscription dashboard"""
+    """Display user's subscription dashboard - Per-Report Pricing"""
     try:
-        subscription = UserSubscription.objects.select_related('plan').prefetch_related('plan__features').get(
-            user=request.user,
-            status='active'
+        subscription = UserSubscription.objects.select_related('plan').get(
+            user=request.user
         )
         
-        # Calculate usage percentage
+        # Calculate usage percentage based on purchased reports
         usage_percentage = 0
-        if subscription.plan.max_requests_per_month <= 900000:
-            usage_percentage = (subscription.requests_used_this_month / subscription.plan.max_requests_per_month) * 100
+        if subscription.total_reports_purchased > 0:
+            usage_percentage = (subscription.total_reports_used / subscription.total_reports_purchased) * 100
         
         return render(request, 'subscriptions/dashboard.html', {
             'subscription': subscription,
-            'usage_percentage': min(usage_percentage, 100)
+            'usage_percentage': min(usage_percentage, 100),
+            'available_reports': subscription.available_reports,
+            'free_trial_available': subscription.can_use_free_trial
         })
     except UserSubscription.DoesNotExist:
         return render(request, 'subscriptions/dashboard.html', {
             'subscription': None,
-            'usage_percentage': 0
+            'usage_percentage': 0,
+            'available_reports': 0,
+            'free_trial_available': True  # New users get free trial
         })

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Submit Request</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; border: 1px solid black; padding: 20px; }
+        .header { border: 1px solid black; padding: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; }
+        h1 { border-bottom: 2px solid black; padding: 10px; margin-bottom: 15px; }
+        .info-box { border: 1px solid black; padding: 10px; margin-bottom: 15px; }
+        form { border: 1px solid black; padding: 15px; }
+        label { display: block; margin-top: 10px; border-bottom: 1px solid black; padding: 5px; }
+        input { width: 100%; padding: 8px; margin-top: 5px; border: 1px solid black; }
+        button { width: 100%; padding: 10px; margin-top: 15px; border: 2px solid black; background: white; cursor: pointer; }
+        button:hover { background: #f0f0f0; }
+        .message { border: 2px solid black; padding: 10px; margin-bottom: 15px; }
+        .links { border: 1px solid black; padding: 10px; margin-top: 15px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+    <div class="header">
+        <span>User: {{ user.username }}</span>
+        <a href="{% url 'auth:logout-page' %}">Logout</a>
+    </div>
+    
+    <h1>Submit Background Check Request</h1>
+    
+    {% if messages %}
+        {% for message in messages %}
+            <div class="message">{{ message }}</div>
+        {% endfor %}
+    {% endif %}
+    
+    {% if subscription %}
+        <div class="info-box">
+            <p><strong>Available reports:</strong> {{ subscription.available_reports }}</p>
+            {% if subscription.can_use_free_trial %}
+                <p><em>Your first request will use your free trial!</em></p>
+            {% endif %}
+        </div>
+    {% endif %}
+    
+    <form method="post">
+        {% csrf_token %}
+        
+        <label>Full Name:</label><br>
+        <input type="text" name="name" required><br><br>
+        
+        <label>Email:</label><br>
+        <input type="email" name="email" required><br><br>
+        
+        <label>Phone Number:</label><br>
+        <input type="text" name="phone_number" required><br><br>
+        
+        <label>Date of Birth:</label><br>
+        <input type="date" name="dob" required><br><br>
+        
+        <label>City:</label><br>
+        <input type="text" name="city" required><br><br>
+        
+        <label>State (2 letters):</label><br>
+        <input type="text" name="state" required maxlength="2"><br><br>
+        
+        <button type="submit">Submit Request</button>
+    </form>
+    
+    <div class="links">
+        <a href="{% url 'subscriptions:my-dashboard' %}">Back to Dashboard</a>
+    </div>
+    </div>
+</body>
+</html>
