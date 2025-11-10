@@ -48,7 +48,7 @@ class RequestViewSet(viewsets.ModelViewSet):
         return RequestSerializer
 
     @swagger_auto_schema(
-        operation_description="Submit a new background check request. Requires active subscription and available request quota.",
+        operation_description="Submit a new background check request. No subscription required - payment is made after submission.",
         operation_summary="Submit New Background Check Request",
         operation_id="request_create",
         request_body=openapi.Schema(
@@ -65,66 +65,60 @@ class RequestViewSet(viewsets.ModelViewSet):
         ),
         responses={
             201: openapi.Response(
-                description="Request created successfully",
+                description="Request created successfully - proceed to payment",
                 examples={
                     "application/json": {
-                        "id": 1,
-                        "name": "John Smith",
-                        "email": "john.smith@example.com",
-                        "phone_number": "+1234567890",
-                        "dob": "1990-05-15",
-                        "city": "New York",
-                        "state": "NY",
-                        "status": "Pending",
-                        "created_at": "2024-01-20T10:30:00Z"
+                        "success": True,
+                        "message": "Background check request submitted successfully",
+                        "request": {
+                            "id": 1,
+                            "name": "John Smith",
+                            "email": "john.smith@example.com",
+                            "phone_number": "+1234567890",
+                            "dob": "1990-05-15",
+                            "city": "New York",
+                            "state": "NY",
+                            "status": "Pending",
+                            "payment_status": "payment_pending",
+                            "created_at": "2024-01-20T10:30:00Z"
+                        },
+                        "next_step": {
+                            "action": "select_payment",
+                            "url": "/api/requests/api/{request_id}/select-pricing/",
+                            "message": "Please select your report type and proceed to payment"
+                        }
                     }
                 }
             ),
-            400: "Bad Request - Validation errors",
-            403: "Forbidden - No active subscription or request limit reached"
+            400: "Bad Request - Validation errors"
         },
         tags=['Background Check Requests']
     )
     def create(self, request, *args, **kwargs):
-        return super().create(request, *args, **kwargs)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        
+        request_obj = serializer.instance
+        
+        return Response({
+            'success': True,
+            'message': 'Background check request submitted successfully',
+            'request': RequestSerializer(request_obj).data,
+            'next_step': {
+                'action': 'select_payment',
+                'url': f'/api/requests/api/{request_obj.id}/select-pricing/',
+                'message': 'Please select your report type ($25 or $50) and proceed to payment',
+                'pricing_options': {
+                    'basic': {'price': 25, 'features': 'Identity verification, criminal history check'},
+                    'premium': {'price': 50, 'features': 'All basic features + employment & education verification'}
+                }
+            }
+        }, status=status.HTTP_201_CREATED)
 
     def perform_create(self, serializer):
-        # Check if user has subscription
-        try:
-            subscription = UserSubscription.objects.get(user=self.request.user)
-        except UserSubscription.DoesNotExist:
-            from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied({
-                'error': 'No subscription found',
-                'message': 'You need to select a plan before submitting background check requests.',
-                'action': 'Please select a plan to continue.',
-                'plans_url': '/api/subscriptions/plans/'
-            })
-        
-        # Check if user has plan assigned
-        if not subscription.plan:
-            from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied({
-                'error': 'No plan selected',
-                'message': 'Please select a plan before submitting requests.',
-                'plans_url': '/api/subscriptions/plans/'
-            })
-        
-        # Check if user can make more requests (has free trial or purchased reports)
-        if not subscription.can_make_request:
-            from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied({
-                'error': 'No reports available',
-                'message': 'You have no available reports. Please purchase more reports.',
-                'free_trial_used': subscription.free_trial_used,
-                'available_reports': subscription.available_reports,
-                'action': 'Purchase reports to continue.',
-                'purchase_url': '/api/subscriptions/purchase-report/'
-            })
-        
-        # Save the request and increment usage
-        request_obj = serializer.save(user=self.request.user)
-        subscription.increment_usage()
+        # Simply create the request - no subscription checks
+        serializer.save(user=self.request.user, payment_status='payment_pending')
 
     def perform_update(self, serializer):
         # Only admins can update status
@@ -734,6 +728,351 @@ class RequestViewSet(viewsets.ModelViewSet):
             'requests_summary': requests_summary,
             'requests': requests_data,
             'message': 'Dashboard data retrieved successfully'
+        })
+
+    @swagger_auto_schema(
+        operation_summary="Select Report Pricing",
+        operation_description="Select report type ($25 Basic or $50 Premium) and create Stripe checkout session for payment.",
+        operation_id="request_select_pricing",
+        tags=['Background Check Payments'],
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['report_type'],
+            properties={
+                'report_type': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    enum=['basic', 'premium'],
+                    description='Type of report: basic ($25) or premium ($50)'
+                )
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Checkout session created - redirect to checkout_url",
+                examples={
+                    "application/json": {
+                        "success": True,
+                        "checkout_url": "https://checkout.stripe.com/c/pay/cs_test_xxx",
+                        "session_id": "cs_test_xxx",
+                        "report_type": "basic",
+                        "amount": 25.00,
+                        "message": "Redirect user to checkout_url to complete payment"
+                    }
+                }
+            ),
+            400: "Invalid report type or request already paid",
+            404: "Request not found"
+        }
+    )
+    @action(detail=True, methods=['post'], url_path='select-pricing', url_name='select-pricing')
+    def select_pricing(self, request, pk=None):
+        """Select report pricing and create Stripe checkout session"""
+        import stripe
+        from django.conf import settings
+        
+        # Debug logging
+        print(f"[DEBUG] Received data: {request.data}")
+        print(f"[DEBUG] Request method: {request.method}")
+        print(f"[DEBUG] Request user: {request.user}")
+        print(f"[DEBUG] Request ID (pk): {pk}")
+        
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+        
+        try:
+            bg_request = self.get_object()
+            
+            # Check if request belongs to user
+            if bg_request.user != request.user:
+                return Response(
+                    {'error': 'You can only pay for your own requests'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Check if already paid
+            if bg_request.payment_status == 'payment_completed':
+                return Response(
+                    {'error': 'This request has already been paid for'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Validate report type
+            from .serializers import PaymentPricingSerializer
+            serializer = PaymentPricingSerializer(data=request.data)
+            
+            if not serializer.is_valid():
+                return Response(
+                    {
+                        'error': 'Invalid data provided',
+                        'details': serializer.errors,
+                        'hint': 'Make sure to send {"report_type": "basic"} or {"report_type": "premium"}'
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            report_type = serializer.validated_data['report_type']
+            
+            # Set amount based on report type
+            if report_type == 'basic':
+                amount = 25.00
+                description = "Basic Background Check Report"
+            else:  # premium
+                amount = 50.00
+                description = "Premium Background Check Report"
+            
+            # Create Stripe Checkout Session
+            checkout_session = stripe.checkout.Session.create(
+                payment_method_types=['card'],
+                line_items=[{
+                    'price_data': {
+                        'currency': 'usd',
+                        'unit_amount': int(amount * 100),  # Convert to cents
+                        'product_data': {
+                            'name': description,
+                            'description': f"Background check for {bg_request.name}",
+                        },
+                    },
+                    'quantity': 1,
+                }],
+                mode='payment',
+                success_url=request.build_absolute_uri(
+                    f'/api/requests/api/{bg_request.id}/confirm-payment/?session_id={{CHECKOUT_SESSION_ID}}'
+                ),
+                cancel_url=request.build_absolute_uri(
+                    f'/api/requests/api/{bg_request.id}/payment-cancelled/'
+                ),
+                metadata={
+                    'request_id': bg_request.id,
+                    'report_type': report_type,
+                    'user_id': request.user.id
+                }
+            )
+            
+            # Update request with report type and session ID
+            bg_request.report_type = report_type
+            bg_request.payment_amount = amount
+            bg_request.stripe_checkout_session_id = checkout_session.id
+            bg_request.save()
+            
+            return Response({
+                'success': True,
+                'checkout_url': checkout_session.url,
+                'session_id': checkout_session.id,
+                'report_type': report_type,
+                'amount': amount,
+                'message': 'Redirect user to checkout_url to complete payment'
+            })
+            
+        except Request.DoesNotExist:
+            return Response(
+                {'error': 'Request not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'error': f'Error creating checkout session: {str(e)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @swagger_auto_schema(
+        operation_summary="Confirm Payment",
+        operation_description="Confirm payment from Stripe checkout and process the background check request.",
+        operation_id="request_confirm_payment",
+        tags=['Background Check Payments'],
+        manual_parameters=[
+            openapi.Parameter('session_id', openapi.IN_QUERY, description="Stripe Checkout Session ID", type=openapi.TYPE_STRING, required=True)
+        ],
+        responses={
+            200: openapi.Response(
+                description="Payment confirmed successfully",
+                examples={
+                    "application/json": {
+                        "success": True,
+                        "message": "Payment confirmed! Your background check is being processed.",
+                        "request": {
+                            "id": 1,
+                            "status": "Pending",
+                            "payment_status": "payment_completed",
+                            "report_type": "basic",
+                            "payment_amount": 25.00
+                        }
+                    }
+                }
+            ),
+            400: "Payment not completed or invalid session",
+            404: "Request not found"
+        }
+    )
+    @action(detail=True, methods=['get'], permission_classes=[permissions.AllowAny], url_path='confirm-payment', url_name='confirm-payment')
+    def confirm_payment(self, request, pk=None):
+        """Confirm payment after Stripe checkout"""
+        import stripe
+        from django.conf import settings
+        from django.utils import timezone
+        import traceback
+        
+        # Debug logging
+        print(f"[DEBUG CONFIRM] Request ID: {pk}")
+        print(f"[DEBUG CONFIRM] Session ID: {request.query_params.get('session_id')}")
+        
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+        
+        session_id = request.query_params.get('session_id')
+        
+        if not session_id:
+            return Response(
+                {'error': 'Checkout session ID is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            bg_request = self.get_object()
+            print(f"[DEBUG CONFIRM] Found request: {bg_request.id}, payment_status: {bg_request.payment_status}")
+            
+            # Retrieve checkout session from Stripe
+            print(f"[DEBUG CONFIRM] Retrieving Stripe session...")
+            checkout_session = stripe.checkout.Session.retrieve(session_id)
+            print(f"[DEBUG CONFIRM] Payment status from Stripe: {checkout_session.payment_status}")
+            
+            # Check if payment was successful
+            if checkout_session.payment_status != 'paid':
+                return Response(
+                    {'error': 'Payment not completed', 'status': checkout_session.payment_status},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Update request with payment confirmation
+            bg_request.payment_status = 'payment_completed'
+            bg_request.stripe_payment_intent_id = checkout_session.payment_intent
+            bg_request.payment_date = timezone.now()
+            bg_request.save()
+            
+            print(f"[DEBUG CONFIRM] Payment confirmed successfully for request {bg_request.id}")
+            
+            return Response({
+                'success': True,
+                'message': 'Payment confirmed! Your background check is being processed.',
+                'request': RequestSerializer(bg_request).data,
+                'next_steps': {
+                    'message': 'You will be notified when your report is ready',
+                    'check_status_url': f'/api/requests/api/{bg_request.id}/'
+                }
+            })
+            
+        except Exception as e:
+            # Print full traceback for debugging
+            print(f"[DEBUG CONFIRM ERROR] {str(e)}")
+            print(f"[DEBUG CONFIRM ERROR] Full traceback:")
+            traceback.print_exc()
+            
+            return Response(
+                {
+                    'error': f'Error confirming payment: {str(e)}',
+                    'error_type': type(e).__name__,
+                    'session_id': session_id,
+                    'request_id': pk
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @swagger_auto_schema(
+        operation_summary="Payment Cancelled",
+        operation_description="Handle cancelled payment from Stripe checkout.",
+        operation_id="request_payment_cancelled",
+        tags=['Background Check Payments'],
+        responses={
+            200: "Payment cancelled"
+        }
+    )
+    @action(detail=True, methods=['get'], permission_classes=[permissions.AllowAny], url_path='payment-cancelled', url_name='payment-cancelled')
+    def payment_cancelled(self, request, pk=None):
+        """Handle cancelled payment"""
+        try:
+            bg_request = self.get_object()
+            return Response({
+                'message': 'Payment was cancelled',
+                'request_id': bg_request.id,
+                'retry_url': f'/api/requests/api/{bg_request.id}/select-pricing/',
+                'note': 'You can try again by selecting a report type'
+            })
+        except Request.DoesNotExist:
+            return Response(
+                {'error': 'Request not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @swagger_auto_schema(
+        operation_summary="Get Pricing Options",
+        operation_description="Get available pricing options for background check reports.",
+        operation_id="request_pricing_options",
+        tags=['Background Check Payments'],
+        responses={
+            200: openapi.Response(
+                description="Pricing options",
+                examples={
+                    "application/json": {
+                        "pricing_options": [
+                            {
+                                "type": "basic",
+                                "price": 25.00,
+                                "name": "Basic Report",
+                                "features": [
+                                    "Identity Verification",
+                                    "Criminal History Check",
+                                    "Address History"
+                                ]
+                            },
+                            {
+                                "type": "premium",
+                                "price": 50.00,
+                                "name": "Premium Report",
+                                "features": [
+                                    "All Basic features",
+                                    "Employment Verification",
+                                    "Education Verification",
+                                    "Priority Processing"
+                                ]
+                            }
+                        ]
+                    }
+                }
+            )
+        }
+    )
+    @action(detail=False, methods=['get'], permission_classes=[permissions.AllowAny], url_path='pricing-options', url_name='pricing-options')
+    def pricing_options(self, request):
+        """Get available pricing options"""
+        return Response({
+            'pricing_options': [
+                {
+                    'type': 'basic',
+                    'price': 25.00,
+                    'name': 'Basic Report',
+                    'description': 'Essential background check',
+                    'features': [
+                        'Identity Verification',
+                        'SSN Trace',
+                        'National Criminal Search',
+                        'Sex Offender Registry',
+                        'Address History'
+                    ],
+                    'delivery': '2-3 business days'
+                },
+                {
+                    'type': 'premium',
+                    'price': 50.00,
+                    'name': 'Premium Report',
+                    'description': 'Comprehensive background check',
+                    'features': [
+                        'All Basic Report features',
+                        'Employment Verification',
+                        'Education Verification',
+                        'Unlimited County Search',
+                        'Priority Processing',
+                        'Dedicated Support'
+                    ],
+                    'delivery': '1-2 business days'
+                }
+            ]
         })
 
     @swagger_auto_schema(

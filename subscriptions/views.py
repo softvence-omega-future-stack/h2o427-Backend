@@ -1134,8 +1134,6 @@ def plans_list_view(request):
             feature_list.append({'name': 'Priority Support'})
         else:
             feature_list.append({'name': 'Standard Support'})
-        if plan.api_access:
-            feature_list.append({'name': 'API Access'})
         
         plans_data.append({
             'id': plan.id,

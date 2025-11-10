@@ -9,15 +9,20 @@ class RequestSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source='user.username', read_only=True)
     user_email = serializers.CharField(source='user.email', read_only=True)
     days_since_created = serializers.SerializerMethodField()
+    report_price = serializers.SerializerMethodField()
     
     class Meta:
         model = Request
         fields = [
             'id', 'user', 'user_name', 'user_email', 'name', 'dob', 
             'city', 'state', 'email', 'phone_number', 'status', 
-            'created_at', 'updated_at', 'days_since_created'
+            'payment_status', 'report_type', 'payment_amount', 'payment_date',
+            'stripe_checkout_session_id', 'stripe_payment_intent_id',
+            'created_at', 'updated_at', 'days_since_created', 'report_price'
         ]
-        read_only_fields = ['user', 'created_at', 'updated_at', 'days_since_created']
+        read_only_fields = ['user', 'created_at', 'updated_at', 'days_since_created', 
+                           'payment_status', 'payment_amount', 'payment_date',
+                           'stripe_checkout_session_id', 'stripe_payment_intent_id', 'report_price']
         extra_kwargs = {
             'name': {
                 'help_text': 'Full name of the person for background check'
@@ -41,6 +46,9 @@ class RequestSerializer(serializers.ModelSerializer):
 
     def get_days_since_created(self, obj):
         return (date.today() - obj.created_at.date()).days
+    
+    def get_report_price(self, obj):
+        return obj.get_report_price()
 
 class RequestCreateSerializer(serializers.ModelSerializer):
     class Meta:
@@ -270,3 +278,15 @@ class AdminReportFormSerializer(serializers.ModelSerializer):
         
         return super().update(instance, validated_data)
 
+
+class PaymentPricingSerializer(serializers.Serializer):
+    """Serializer for selecting report type and creating payment"""
+    report_type = serializers.ChoiceField(
+        choices=[('basic', 'Basic Report - $25'), ('premium', 'Premium Report - $50')],
+        help_text="Select the type of background check report"
+    )
+    
+    def validate_report_type(self, value):
+        if value not in ['basic', 'premium']:
+            raise serializers.ValidationError("Invalid report type. Choose 'basic' or 'premium'")
+        return value
