@@ -11,6 +11,13 @@ from .views import (
     test_mark_read
 )
 
+# Import admin notification views
+from admin_dashboard.admin_views import (
+    AdminNotificationView, 
+    AdminNotificationMarkReadView, 
+    AdminNotificationMarkAllReadView
+)
+
 app_name = 'notifications'
 
 router = DefaultRouter()
@@ -18,6 +25,11 @@ router.register(r'notifications', NotificationViewSet, basename='notification')
 router.register(r'fcm-devices', FCMDeviceViewSet, basename='fcm-device')
 
 urlpatterns = [
+    # Admin notification endpoints
+    path('admin/', AdminNotificationView.as_view(), name='admin_notifications'),
+    path('admin/<int:notification_id>/mark-read/', AdminNotificationMarkReadView.as_view(), name='admin_notification_mark_read'),
+    path('admin/mark-all-read/', AdminNotificationMarkAllReadView.as_view(), name='admin_notification_mark_all_read'),
+    
     # Simple view pages (MTV pattern) - Put these BEFORE router urls to avoid conflicts
     path('all/', all_notifications_view, name='all_notifications'),
     path('test/', test_notifications_view, name='test_notifications'),

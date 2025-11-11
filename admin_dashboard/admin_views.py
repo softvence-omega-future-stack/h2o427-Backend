@@ -4,6 +4,7 @@ from rest_framework import status, permissions
 from rest_framework.decorators import action
 from django.db.models import Q, Count
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from background_requests.models import Request, Report
 from .models import AdminDashboardSettings, RequestActivity, AdminNote, RequestAssignment
 from .serializers import (
@@ -51,8 +52,8 @@ class AdminDashboardStatsView(APIView):
             'in_progress_requests': in_progress_requests,
             'completed_requests': completed_requests,
             'total_clients': total_clients,
-            'recent_requests': AdminRequestSerializer(recent_requests, many=True).data,
-            'recent_activities': RequestActivitySerializer(recent_activities, many=True).data
+            'recent_requests': recent_requests,
+            'recent_activities': recent_activities
         }
         
         serializer = DashboardStatsSerializer(data)
@@ -347,7 +348,23 @@ class AdminAssignmentView(APIView):
             
             # Check if already assigned
             if hasattr(bg_request, 'assignment'):
-                return Response({'error': 'Request already assigned'}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'error': 'Request already assigned. Use PATCH to update the assignment.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Validate that assigned_to user exists
+            assigned_to_id = request.data.get('assigned_to')
+            if not assigned_to_id:
+                return Response({'error': 'assigned_to field is required'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            try:
+                assigned_user = User.objects.get(id=assigned_to_id)
+                if not assigned_user.is_staff:
+                    return Response({
+                        'error': f'User "{assigned_user.username}" (ID: {assigned_to_id}) is not an admin user. Only staff members can be assigned requests.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            except User.DoesNotExist:
+                return Response({
+                    'error': f'User with ID {assigned_to_id} does not exist. Please provide a valid admin user ID.'
+                }, status=status.HTTP_400_BAD_REQUEST)
             
             serializer = RequestAssignmentSerializer(data=request.data)
             
@@ -430,3 +447,537 @@ class AdminUsersView(APIView):
         admin_users = User.objects.filter(is_staff=True)
         serializer = AdminUserSerializer(admin_users, many=True)
         return Response(serializer.data)
+
+
+class AdminAllUsersView(APIView):
+    """Get all regular users (non-admin)"""
+    permission_classes = [permissions.IsAdminUser]
+    
+    @swagger_auto_schema(
+        operation_summary="Get All Users",
+        operation_description="Get list of all regular users with their subscription information.",
+        operation_id="admin_all_users_list",
+        tags=['Admin - User Management'],
+        manual_parameters=[
+            openapi.Parameter('search', openapi.IN_QUERY, description="Search by name or email", type=openapi.TYPE_STRING),
+            openapi.Parameter('subscription_plan', openapi.IN_QUERY, description="Filter by plan name", type=openapi.TYPE_STRING),
+        ],
+        responses={
+            200: openapi.Response(
+                description="List of users",
+                examples={
+                    "application/json": {
+                        "count": 10,
+                        "results": []
+                    }
+                }
+            ),
+            403: "Forbidden - Admin access required"
+        }
+    )
+    def get(self, request):
+        from subscriptions.models import UserSubscription
+        
+        search = request.query_params.get('search', None)
+        subscription_plan = request.query_params.get('subscription_plan', None)
+        
+        queryset = User.objects.filter(is_staff=False).select_related('subscription')
+        
+        if search:
+            queryset = queryset.filter(
+                Q(username__icontains=search) |
+                Q(email__icontains=search) |
+                Q(first_name__icontains=search) |
+                Q(last_name__icontains=search)
+            )
+        
+        users_data = []
+        for user in queryset:
+            # Use the select_related subscription if available
+            try:
+                subscription = user.subscription
+                user_data = {
+                    'id': user.id,
+                    'name': f"{user.first_name} {user.last_name}".strip() or user.username,
+                    'email': user.email,
+                    'subscription_plan': subscription.plan.name if subscription.plan else 'No Plan',
+                    'start_date': user.date_joined.strftime('%Y-%m-%d'),
+                    'requests': Request.objects.filter(user=user).count(),
+                    'total_reports_purchased': subscription.total_reports_purchased,
+                    'total_reports_used': subscription.total_reports_used,
+                    'available_reports': subscription.available_reports,
+                    'status': 'active' if subscription.plan else 'inactive'
+                }
+            except UserSubscription.DoesNotExist:
+                user_data = {
+                    'id': user.id,
+                    'name': f"{user.first_name} {user.last_name}".strip() or user.username,
+                    'email': user.email,
+                    'subscription_plan': 'No Plan',
+                    'start_date': user.date_joined.strftime('%Y-%m-%d'),
+                    'requests': Request.objects.filter(user=user).count(),
+                    'total_reports_purchased': 0,
+                    'total_reports_used': 0,
+                    'available_reports': 0,
+                    'status': 'inactive'
+                }
+            
+            users_data.append(user_data)
+        
+        return Response({
+            'count': len(users_data),
+            'results': users_data
+        })
+
+
+class AdminUserDetailView(APIView):
+    """Get single user detail"""
+    permission_classes = [permissions.IsAdminUser]
+    
+    @swagger_auto_schema(
+        operation_summary="Get Single User Details",
+        operation_description="Get detailed information about a specific user including subscription and requests.",
+        operation_id="admin_user_detail",
+        tags=['Admin - User Management'],
+        responses={
+            200: openapi.Response(
+                description="User details",
+                examples={
+                    "application/json": {
+                        "id": 1,
+                        "username": "johndoe",
+                        "email": "john@example.com",
+                        "subscription": {},
+                        "requests": []
+                    }
+                }
+            ),
+            404: "User not found",
+            403: "Forbidden - Admin access required"
+        }
+    )
+    def get(self, request, user_id):
+        try:
+            from subscriptions.models import UserSubscription
+            from subscriptions.serializers import UserSubscriptionSerializer
+            from background_requests.serializers import RequestSerializer
+            
+            user = User.objects.get(id=user_id)
+            
+            # Get subscription
+            subscription_data = None
+            try:
+                subscription = UserSubscription.objects.get(user=user)
+                subscription_data = UserSubscriptionSerializer(subscription).data
+            except UserSubscription.DoesNotExist:
+                pass
+            
+            # Get requests
+            requests = Request.objects.filter(user=user).order_by('-created_at')[:10]
+            requests_data = RequestSerializer(requests, many=True).data
+            
+            user_data = {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'full_name': f"{user.first_name} {user.last_name}".strip() or user.username,
+                'subscription': subscription_data,
+                'requests': requests_data,
+                'date_joined': user.date_joined
+            }
+            
+            return Response(user_data)
+            
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+class AdminReportDownloadView(APIView):
+    """Download report PDF"""
+    permission_classes = [permissions.IsAdminUser]
+    
+    @swagger_auto_schema(
+        operation_summary="Download Report PDF",
+        operation_description="Download the PDF report for a specific request.",
+        operation_id="admin_report_download",
+        tags=['Admin - Report Management'],
+        responses={
+            200: "PDF file",
+            404: "Report not found",
+            403: "Forbidden - Admin access required"
+        }
+    )
+    def get(self, request, request_id):
+        from django.http import FileResponse, Http404
+        import os
+        
+        try:
+            bg_request = Request.objects.get(id=request_id)
+            
+            if not hasattr(bg_request, 'report') or not bg_request.report:
+                return Response({'error': 'Report not found for this request'}, status=status.HTTP_404_NOT_FOUND)
+            
+            report = bg_request.report
+            
+            if not report.pdf:
+                return Response({'error': 'PDF file not found'}, status=status.HTTP_404_NOT_FOUND)
+            
+            # Open the file
+            try:
+                response = FileResponse(report.pdf.open('rb'), content_type='application/pdf')
+                response['Content-Disposition'] = f'attachment; filename="report_{request_id}.pdf"'
+                return response
+            except FileNotFoundError:
+                return Response({'error': 'PDF file does not exist'}, status=status.HTTP_404_NOT_FOUND)
+            
+        except Request.DoesNotExist:
+            return Response({'error': 'Request not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+class AdminPlanManagementView(APIView):
+    """Admin CRUD operations for subscription plans"""
+    permission_classes = [permissions.IsAdminUser]
+    
+    @swagger_auto_schema(
+        operation_summary="Get All Plans",
+        operation_description="Get list of subscription plans. By default returns only active plans. Use ?include_inactive=true to see all plans.",
+        operation_id="admin_plans_list",
+        tags=['Admin - Plan Management'],
+        manual_parameters=[
+            openapi.Parameter('include_inactive', openapi.IN_QUERY, description="Set to 'true' to include inactive/deleted plans", type=openapi.TYPE_BOOLEAN),
+        ],
+        responses={
+            200: openapi.Response(
+                description="List of plans",
+                examples={
+                    "application/json": [
+                        {
+                            "id": 1,
+                            "name": "Basic Plan",
+                            "price_per_report": "25.00",
+                            "is_active": True
+                        }
+                    ]
+                }
+            ),
+            403: "Forbidden - Admin access required"
+        }
+    )
+    def get(self, request):
+        from subscriptions.models import SubscriptionPlan
+        from subscriptions.serializers import SubscriptionPlanSerializer
+        
+        # By default, only show active plans
+        include_inactive = request.query_params.get('include_inactive', 'false').lower() == 'true'
+        
+        if include_inactive:
+            plans = SubscriptionPlan.objects.all().order_by('-is_active', 'price_per_report')
+        else:
+            plans = SubscriptionPlan.objects.filter(is_active=True).order_by('price_per_report')
+        
+        serializer = SubscriptionPlanSerializer(plans, many=True)
+        return Response({
+            'plans': serializer.data,
+            'count': len(serializer.data),
+            'showing_inactive': include_inactive
+        })
+    
+    @swagger_auto_schema(
+        operation_summary="Create New Plan",
+        operation_description="Create a new subscription plan.",
+        operation_id="admin_plans_create",
+        tags=['Admin - Plan Management'],
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['name', 'price_per_report', 'description'],
+            properties={
+                'name': openapi.Schema(type=openapi.TYPE_STRING, description='Plan name'),
+                'plan_type': openapi.Schema(type=openapi.TYPE_STRING, enum=['basic', 'premium'], description='Plan type'),
+                'price_per_report': openapi.Schema(type=openapi.TYPE_NUMBER, description='Price per report'),
+                'description': openapi.Schema(type=openapi.TYPE_STRING, description='Plan description'),
+                'identity_verification': openapi.Schema(type=openapi.TYPE_BOOLEAN, default=False),
+                'ssn_trace': openapi.Schema(type=openapi.TYPE_BOOLEAN, default=False),
+                'national_criminal_search': openapi.Schema(type=openapi.TYPE_BOOLEAN, default=False),
+                'sex_offender_registry': openapi.Schema(type=openapi.TYPE_BOOLEAN, default=False),
+                'employment_verification': openapi.Schema(type=openapi.TYPE_BOOLEAN, default=False),
+                'education_verification': openapi.Schema(type=openapi.TYPE_BOOLEAN, default=False),
+                'unlimited_county_search': openapi.Schema(type=openapi.TYPE_BOOLEAN, default=False),
+                'priority_support': openapi.Schema(type=openapi.TYPE_BOOLEAN, default=False),
+                'api_access': openapi.Schema(type=openapi.TYPE_BOOLEAN, default=False),
+            }
+        ),
+        responses={
+            201: "Plan created successfully",
+            400: "Invalid data",
+            403: "Forbidden - Admin access required"
+        }
+    )
+    def post(self, request):
+        from subscriptions.models import SubscriptionPlan
+        from subscriptions.serializers import SubscriptionPlanSerializer
+        
+        serializer = SubscriptionPlanSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class AdminPlanDetailView(APIView):
+    """Update or delete a specific plan"""
+    permission_classes = [permissions.IsAdminUser]
+    
+    @swagger_auto_schema(
+        operation_summary="Get Plan Details",
+        operation_description="Get details of a specific plan.",
+        operation_id="admin_plan_detail",
+        tags=['Admin - Plan Management'],
+        responses={
+            200: "Plan details",
+            404: "Plan not found",
+            403: "Forbidden - Admin access required"
+        }
+    )
+    def get(self, request, plan_id):
+        from subscriptions.models import SubscriptionPlan
+        from subscriptions.serializers import SubscriptionPlanSerializer
+        
+        try:
+            plan = SubscriptionPlan.objects.get(id=plan_id)
+            serializer = SubscriptionPlanSerializer(plan)
+            return Response(serializer.data)
+        except SubscriptionPlan.DoesNotExist:
+            return Response({'error': 'Plan not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    @swagger_auto_schema(
+        operation_summary="Update Plan",
+        operation_description="Update an existing subscription plan.",
+        operation_id="admin_plan_update",
+        tags=['Admin - Plan Management'],
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'name': openapi.Schema(type=openapi.TYPE_STRING, description='Plan name'),
+                'plan_type': openapi.Schema(type=openapi.TYPE_STRING, enum=['basic', 'premium']),
+                'price_per_report': openapi.Schema(type=openapi.TYPE_NUMBER, description='Price per report'),
+                'description': openapi.Schema(type=openapi.TYPE_STRING, description='Plan description'),
+                'identity_verification': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                'ssn_trace': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                'national_criminal_search': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                'sex_offender_registry': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                'employment_verification': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                'education_verification': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                'unlimited_county_search': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                'priority_support': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                'api_access': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+            }
+        ),
+        responses={
+            200: "Plan updated successfully",
+            400: "Invalid data",
+            404: "Plan not found",
+            403: "Forbidden - Admin access required"
+        }
+    )
+    def patch(self, request, plan_id):
+        from subscriptions.models import SubscriptionPlan
+        from subscriptions.serializers import SubscriptionPlanSerializer
+        
+        try:
+            plan = SubscriptionPlan.objects.get(id=plan_id)
+            serializer = SubscriptionPlanSerializer(plan, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except SubscriptionPlan.DoesNotExist:
+            return Response({'error': 'Plan not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    @swagger_auto_schema(
+        operation_summary="Delete Plan",
+        operation_description="Delete a subscription plan. Use ?hard_delete=true for permanent deletion, otherwise does soft delete (sets is_active=False).",
+        operation_id="admin_plan_delete",
+        tags=['Admin - Plan Management'],
+        manual_parameters=[
+            openapi.Parameter('hard_delete', openapi.IN_QUERY, description="Set to 'true' for permanent deletion", type=openapi.TYPE_BOOLEAN),
+        ],
+        responses={
+            200: "Plan deleted successfully",
+            400: "Cannot delete - plan has active subscriptions",
+            404: "Plan not found",
+            403: "Forbidden - Admin access required"
+        }
+    )
+    def delete(self, request, plan_id):
+        from subscriptions.models import SubscriptionPlan, UserSubscription
+        
+        try:
+            plan = SubscriptionPlan.objects.get(id=plan_id)
+            
+            # Check if plan has active subscriptions
+            active_subscriptions = UserSubscription.objects.filter(plan=plan).count()
+            
+            hard_delete = request.query_params.get('hard_delete', 'false').lower() == 'true'
+            
+            if hard_delete:
+                if active_subscriptions > 0:
+                    return Response({
+                        'error': f'Cannot delete plan. {active_subscriptions} users are currently subscribed to this plan.',
+                        'active_subscriptions': active_subscriptions
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                # Perform hard delete
+                plan_name = plan.name
+                plan.delete()
+                return Response({
+                    'message': f'Plan "{plan_name}" permanently deleted',
+                    'deleted': True
+                })
+            else:
+                # Soft delete - just deactivate
+                plan.is_active = False
+                plan.save()
+                return Response({
+                    'message': f'Plan "{plan.name}" deactivated (soft delete)',
+                    'is_active': False,
+                    'note': 'Use ?hard_delete=true to permanently delete this plan'
+                })
+                
+        except SubscriptionPlan.DoesNotExist:
+            return Response({'error': 'Plan not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+class AdminPlanToggleStatusView(APIView):
+    """Toggle plan active/inactive status"""
+    permission_classes = [permissions.IsAdminUser]
+    
+    @swagger_auto_schema(
+        operation_summary="Toggle Plan Status",
+        operation_description="Toggle plan active/inactive status.",
+        operation_id="admin_plan_toggle_status",
+        tags=['Admin - Plan Management'],
+        responses={
+            200: "Status toggled successfully",
+            404: "Plan not found",
+            403: "Forbidden - Admin access required"
+        }
+    )
+    def post(self, request, plan_id):
+        from subscriptions.models import SubscriptionPlan
+        
+        try:
+            plan = SubscriptionPlan.objects.get(id=plan_id)
+            plan.is_active = not plan.is_active
+            plan.save()
+            return Response({
+                'message': f'Plan {"activated" if plan.is_active else "deactivated"} successfully',
+                'is_active': plan.is_active
+            })
+        except SubscriptionPlan.DoesNotExist:
+            return Response({'error': 'Plan not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+class AdminNotificationView(APIView):
+    """Admin notification management"""
+    permission_classes = [permissions.IsAdminUser]
+    
+    @swagger_auto_schema(
+        operation_summary="Get Admin Notifications",
+        operation_description="Get all notifications for admin users.",
+        operation_id="admin_notifications_list",
+        tags=['Admin - Notifications'],
+        manual_parameters=[
+            openapi.Parameter('unread_only', openapi.IN_QUERY, description="Filter unread only", type=openapi.TYPE_BOOLEAN),
+        ],
+        responses={
+            200: openapi.Response(
+                description="List of notifications",
+                examples={
+                    "application/json": {
+                        "count": 5,
+                        "unread_count": 2,
+                        "results": []
+                    }
+                }
+            ),
+            403: "Forbidden - Admin access required"
+        }
+    )
+    def get(self, request):
+        from notifications.models import Notification
+        from notifications.serializers import NotificationSerializer
+        
+        unread_only = request.query_params.get('unread_only', 'false').lower() == 'true'
+        
+        notifications = Notification.objects.filter(recipient=request.user).order_by('-created_at')
+        
+        if unread_only:
+            notifications = notifications.filter(is_read=False)
+        
+        unread_count = Notification.objects.filter(recipient=request.user, is_read=False).count()
+        
+        serializer = NotificationSerializer(notifications, many=True)
+        
+        return Response({
+            'count': notifications.count(),
+            'unread_count': unread_count,
+            'results': serializer.data
+        })
+
+
+class AdminNotificationMarkReadView(APIView):
+    """Mark single notification as read"""
+    permission_classes = [permissions.IsAdminUser]
+    
+    @swagger_auto_schema(
+        operation_summary="Mark Notification as Read",
+        operation_description="Mark a specific notification as read.",
+        operation_id="admin_notification_mark_read",
+        tags=['Admin - Notifications'],
+        responses={
+            200: "Notification marked as read",
+            404: "Notification not found",
+            403: "Forbidden - Admin access required"
+        }
+    )
+    def post(self, request, notification_id):
+        from notifications.models import Notification
+        
+        try:
+            notification = Notification.objects.get(id=notification_id, recipient=request.user)
+            notification.is_read = True
+            notification.read_at = timezone.now()
+            notification.save()
+            return Response({'message': 'Notification marked as read'})
+        except Notification.DoesNotExist:
+            return Response({'error': 'Notification not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+class AdminNotificationMarkAllReadView(APIView):
+    """Mark all notifications as read"""
+    permission_classes = [permissions.IsAdminUser]
+    
+    @swagger_auto_schema(
+        operation_summary="Mark All Notifications as Read",
+        operation_description="Mark all notifications as read for the current admin user.",
+        operation_id="admin_notification_mark_all_read",
+        tags=['Admin - Notifications'],
+        responses={
+            200: "All notifications marked as read",
+            403: "Forbidden - Admin access required"
+        }
+    )
+    def post(self, request):
+        from notifications.models import Notification
+        
+        updated_count = Notification.objects.filter(
+            recipient=request.user, 
+            is_read=False
+        ).update(is_read=True, read_at=timezone.now())
+        
+        return Response({
+            'message': f'{updated_count} notifications marked as read',
+            'count': updated_count
+        })

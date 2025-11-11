@@ -130,7 +130,8 @@ class AdminNoteSerializer(serializers.ModelSerializer):
         model = AdminNote
         fields = ['id', 'request', 'request_name', 'admin_user', 'admin_username',
                  'admin_full_name', 'note', 'is_internal', 'created_at', 'updated_at']
-        read_only_fields = ['created_at', 'updated_at']
+        read_only_fields = ['id', 'request', 'admin_user', 'request_name', 'admin_username', 
+                           'admin_full_name', 'created_at', 'updated_at']
     
     def get_admin_full_name(self, obj):
         return f"{obj.admin_user.first_name} {obj.admin_user.last_name}".strip()
@@ -147,7 +148,17 @@ class RequestAssignmentSerializer(serializers.ModelSerializer):
         fields = ['id', 'request', 'request_name', 'assigned_to', 'assigned_to_username',
                  'assigned_to_full_name', 'assigned_by', 'assigned_by_username', 
                  'assigned_at', 'due_date', 'priority', 'notes']
-        read_only_fields = ['assigned_at']
+        read_only_fields = ['id', 'request', 'request_name', 'assigned_by', 'assigned_by_username', 
+                           'assigned_to_username', 'assigned_to_full_name', 'assigned_at']
+    
+    def validate_assigned_to(self, value):
+        """Validate that the assigned_to user exists and is a staff member"""
+        if not value.is_staff:
+            raise serializers.ValidationError(
+                f"User '{value.username}' (ID: {value.id}) is not an admin user. "
+                "Only admin users (staff members) can be assigned requests."
+            )
+        return value
     
     def get_assigned_to_full_name(self, obj):
         return f"{obj.assigned_to.first_name} {obj.assigned_to.last_name}".strip()
@@ -158,8 +169,23 @@ class StatusUpdateSerializer(serializers.Serializer):
         ('Pending', 'Pending'),
         ('In Progress', 'In Progress'),
         ('Completed', 'Completed'),
+        ('pending', 'Pending'),
+        ('in_progress', 'In Progress'),
+        ('completed', 'Completed'),
     ])
     notes = serializers.CharField(required=False, allow_blank=True)
+    
+    def validate_status(self, value):
+        """Normalize status to match model choices"""
+        status_mapping = {
+            'pending': 'Pending',
+            'in_progress': 'In Progress',
+            'completed': 'Completed',
+            'Pending': 'Pending',
+            'In Progress': 'In Progress',
+            'Completed': 'Completed',
+        }
+        return status_mapping.get(value, value)
 
 class BulkStatusUpdateSerializer(serializers.Serializer):
     """Serializer for bulk status updates"""
@@ -171,8 +197,23 @@ class BulkStatusUpdateSerializer(serializers.Serializer):
         ('Pending', 'Pending'),
         ('In Progress', 'In Progress'),
         ('Completed', 'Completed'),
+        ('pending', 'Pending'),
+        ('in_progress', 'In Progress'),
+        ('completed', 'Completed'),
     ])
     notes = serializers.CharField(required=False, allow_blank=True)
+    
+    def validate_status(self, value):
+        """Normalize status to match model choices"""
+        status_mapping = {
+            'pending': 'Pending',
+            'in_progress': 'In Progress',
+            'completed': 'Completed',
+            'Pending': 'Pending',
+            'In Progress': 'In Progress',
+            'Completed': 'Completed',
+        }
+        return status_mapping.get(value, value)
 
 class DashboardStatsSerializer(serializers.Serializer):
     """Serializer for dashboard statistics"""

@@ -3,7 +3,10 @@ from .views import AdminRequestView, AdminReportView
 from .admin_views import (
     AdminDashboardStatsView, AdminRequestManagementView, AdminRequestDetailView,
     AdminStatusUpdateView, AdminBulkStatusUpdateView, AdminNoteView, 
-    AdminAssignmentView, AdminUsersView
+    AdminAssignmentView, AdminUsersView, AdminAllUsersView, AdminUserDetailView,
+    AdminReportDownloadView, AdminPlanManagementView, AdminPlanDetailView, 
+    AdminPlanToggleStatusView, AdminNotificationView, AdminNotificationMarkReadView, 
+    AdminNotificationMarkAllReadView
 )
 
 urlpatterns = [
@@ -22,4 +25,23 @@ urlpatterns = [
     path('dashboard/requests/<int:request_id>/notes/', AdminNoteView.as_view(), name='admin_notes'),
     path('dashboard/requests/<int:request_id>/assign/', AdminAssignmentView.as_view(), name='admin_assignment'),
     path('dashboard/users/', AdminUsersView.as_view(), name='admin_users'),
+    
+    # NEW: Report Download
+    path('dashboard/requests/<int:request_id>/report/download/', AdminReportDownloadView.as_view(), name='admin_report_download'),
+    
+    # NEW: All Users Management
+    path('dashboard/all-users/', AdminAllUsersView.as_view(), name='admin_all_users'),
+    path('dashboard/all-users/<int:user_id>/', AdminUserDetailView.as_view(), name='admin_user_detail'),
+    
+    # NEW: Plan Management
+    path('plans/', AdminPlanManagementView.as_view(), name='admin_plans'),
+    path('plans/<int:plan_id>/', AdminPlanDetailView.as_view(), name='admin_plan_detail'),
+    path('plans/<int:plan_id>/toggle-status/', AdminPlanToggleStatusView.as_view(), name='admin_plan_toggle_status'),
+]
+
+# Notification endpoints (to be added to notifications app urls)
+notification_urlpatterns = [
+    path('admin/', AdminNotificationView.as_view(), name='admin_notifications'),
+    path('admin/<int:notification_id>/mark-read/', AdminNotificationMarkReadView.as_view(), name='admin_notification_mark_read'),
+    path('admin/mark-all-read/', AdminNotificationMarkAllReadView.as_view(), name='admin_notification_mark_all_read'),
 ]
