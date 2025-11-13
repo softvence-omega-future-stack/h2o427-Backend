@@ -97,3 +97,24 @@ Desktop.ini
 *.exe
 *.o
 *.so
+
+# Documentation and test files
+*_GUIDE.md
+*_FIX*.md
+*_REFERENCE.md
+*_SETUP*.md
+*_TEST*.md
+ADMIN_*.md
+WEBHOOK_*.md
+STRIPE_*.md
+QUICK_*.md
+MTV_*.md
+test_*.py
+check_*.py
+fix_*.py
+generate_*.py
+update_*.py
+setup_*.py
+quick_*.py
+frontend_integration_*.jsx
+NotificationCenter.jsx
