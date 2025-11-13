@@ -180,17 +180,29 @@ class RequestViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_404_NOT_FOUND
                 )
             
+            # Check if file physically exists
+            try:
+                file_size = report.pdf.size
+                filename = report.pdf.name.split('/')[-1]
+            except (FileNotFoundError, OSError):
+                return Response({
+                    'error': 'PDF file not found',
+                    'message': 'The PDF file is missing from the server. Please contact support.',
+                    'request_id': bg_request.id,
+                    'report_id': report.id
+                }, status=status.HTTP_404_NOT_FOUND)
+            
             # Return report details with download URL
             return Response({
                 'success': True,
                 'report': {
                     'id': report.id,
                     'download_url': request.build_absolute_uri(report.pdf.url),
-                    'filename': report.pdf.name.split('/')[-1],
+                    'filename': filename,
                     'generated_at': report.generated_at,
                     'notes': report.notes,
-                    'file_size': report.pdf.size if report.pdf else 0,
-                    'file_size_mb': f"{report.pdf.size / (1024 * 1024):.2f} MB" if report.pdf else "0 MB"
+                    'file_size': file_size,
+                    'file_size_mb': f"{file_size / (1024 * 1024):.2f} MB"
                 },
                 'request': {
                     'id': bg_request.id,
@@ -210,7 +222,7 @@ class RequestViewSet(viewsets.ModelViewSet):
                     'error': 'An error occurred',
                     'details': str(e)
                 }, 
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
     @swagger_auto_schema(
@@ -1274,12 +1286,30 @@ class ReportViewSet(viewsets.ModelViewSet):
     
     Allows admins to upload and manage PDF reports for background checks.
     Automatically updates request status to 'Completed' when report is created.
+    Users can download their own reports.
     """
     queryset = Report.objects.all().order_by('-generated_at')
-    permission_classes = [permissions.IsAdminUser]  # Only admin can manage reports
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['request__status', 'generated_at']
     search_fields = ['request__name', 'request__email', 'notes']
+
+    def get_permissions(self):
+        """
+        Admin can do everything.
+        Users can only download their own reports.
+        """
+        if self.action == 'download':
+            return [permissions.IsAuthenticated()]
+        return [permissions.IsAdminUser()]
+    
+    def get_queryset(self):
+        """
+        Admin sees all reports.
+        Users see only their own reports.
+        """
+        if self.request.user.is_staff:
+            return Report.objects.all().order_by('-generated_at')
+        return Report.objects.filter(request__user=self.request.user).order_by('-generated_at')
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -1295,38 +1325,72 @@ class ReportViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_summary="Download Report PDF",
-        operation_description="Get download URL for a background check report PDF file. Admin only.",
+        operation_description="Get download URL for a background check report PDF file. Users can download their own reports, admins can download any report.",
         operation_id="report_download",
-        tags=['Admin - Reports'],
+        tags=['Reports'],
         responses={
             200: openapi.Response(
                 description="Report download URL",
                 examples={
                     "application/json": {
+                        "success": True,
                         "download_url": "http://localhost:8000/media/reports/report_1.pdf",
                         "filename": "report_1.pdf",
                         "size": 156789
                     }
                 }
             ),
-            404: "PDF file not available",
-            403: "Admin access required"
+            404: "PDF file not available or report not found",
+            403: "You don't have permission to download this report"
         }
     )
     @action(detail=True, methods=['get'])
     def download(self, request, pk=None):
-        """Download report PDF"""
-        report = self.get_object()
-        if report.pdf:
+        """Download report PDF - Users can download their own reports"""
+        try:
+            report = self.get_object()
+            
+            # Check if user has permission (owns the request or is admin)
+            if not request.user.is_staff and report.request.user != request.user:
+                return Response({
+                    'error': 'Permission denied',
+                    'message': 'You can only download your own reports'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            # Check if PDF exists
+            if not report.pdf:
+                return Response({
+                    'error': 'No PDF file available',
+                    'message': 'The report has been created but the PDF file is not available yet.'
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            # Check if file physically exists
+            try:
+                file_size = report.pdf.size
+                filename = report.pdf.name.split('/')[-1]
+            except (FileNotFoundError, OSError):
+                return Response({
+                    'error': 'PDF file not found',
+                    'message': 'The PDF file is missing from the server. Please contact support.',
+                    'report_id': report.id,
+                    'request_id': report.request.id
+                }, status=status.HTTP_404_NOT_FOUND)
+            
             return Response({
+                'success': True,
                 'download_url': request.build_absolute_uri(report.pdf.url),
-                'filename': report.pdf.name.split('/')[-1],
-                'size': report.pdf.size
+                'filename': filename,
+                'size': file_size,
+                'size_mb': f"{file_size / (1024 * 1024):.2f} MB",
+                'report_id': report.id,
+                'request_id': report.request.id,
+                'generated_at': report.generated_at
             })
-        return Response(
-            {'error': 'No PDF file available'}, 
-            status=status.HTTP_404_NOT_FOUND
-        )
+            
+        except Report.DoesNotExist:
+            return Response({
+                'error': 'Report not found'
+            }, status=status.HTTP_404_NOT_FOUND)
 
 
 # ==================== Template-Based Views (MVT Pattern) ====================
