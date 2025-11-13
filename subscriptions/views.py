@@ -345,8 +345,9 @@ class StripeWebhookView(APIView):
             )
         except ValueError:
             return Response({'error': 'Invalid payload'}, status=status.HTTP_400_BAD_REQUEST)
-        except stripe.error.SignatureVerificationError as e:
-            return Response({'error': 'Invalid signature'}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            # Handles SignatureVerificationError and other Stripe errors
+            return Response({'error': f'Invalid signature: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
         
         # Handle the event
         if event['type'] == 'checkout.session.completed':
@@ -422,9 +423,12 @@ class StripeWebhookView(APIView):
     def handle_payment_succeeded(self, payment_intent):
         """Handle successful payment"""
         try:
-            subscription = UserSubscription.objects.get(
+            subscription = UserSubscription.objects.filter(
                 stripe_customer_id=payment_intent['customer']
-            )
+            ).first()
+            
+            if not subscription:
+                return
             
             PaymentHistory.objects.create(
                 user=subscription.user,
@@ -433,18 +437,21 @@ class StripeWebhookView(APIView):
                 currency=payment_intent['currency'].upper(),
                 status='succeeded',
                 stripe_payment_intent_id=payment_intent['id'],
-                description=f"Payment for {subscription.plan.name}"
+                description=f"Payment for {subscription.plan.name if subscription.plan else 'Plan'}"
             )
             
-        except UserSubscription.DoesNotExist:
-            pass
+        except Exception as e:
+            print(f"Error handling payment succeeded: {str(e)}")
     
     def handle_payment_failed(self, payment_intent):
         """Handle failed payment"""
         try:
-            subscription = UserSubscription.objects.get(
+            subscription = UserSubscription.objects.filter(
                 stripe_customer_id=payment_intent['customer']
-            )
+            ).first()
+            
+            if not subscription:
+                return
             
             PaymentHistory.objects.create(
                 user=subscription.user,
@@ -454,52 +461,62 @@ class StripeWebhookView(APIView):
                 status='failed',
                 stripe_payment_intent_id=payment_intent['id'],
                 failure_reason=payment_intent.get('last_payment_error', {}).get('message', 'Payment failed'),
-                description=f"Failed payment for {subscription.plan.name}"
+                description=f"Failed payment for {subscription.plan.name if subscription.plan else 'Plan'}"
             )
             
-        except UserSubscription.DoesNotExist:
+        except Exception as e:
+            print(f"Error handling payment failed: {str(e)}")
             pass
     
     def handle_subscription_updated(self, subscription_obj):
         """Handle subscription updates from Stripe"""
         try:
-            user_subscription = UserSubscription.objects.get(
+            user_subscription = UserSubscription.objects.filter(
                 stripe_subscription_id=subscription_obj['id']
-            )
+            ).first()
+            
+            if not user_subscription:
+                return
             
             user_subscription.status = subscription_obj['status']
             user_subscription.save()
             
-        except UserSubscription.DoesNotExist:
-            pass
+        except Exception as e:
+            print(f"Error handling subscription update: {str(e)}")
     
     def handle_subscription_deleted(self, subscription_obj):
         """Handle subscription cancellation from Stripe"""
         try:
-            user_subscription = UserSubscription.objects.get(
+            user_subscription = UserSubscription.objects.filter(
                 stripe_subscription_id=subscription_obj['id']
-            )
+            ).first()
+            
+            if not user_subscription:
+                return
             
             user_subscription.status = 'canceled'
             user_subscription.end_date = timezone.now()
             user_subscription.save()
             
-        except UserSubscription.DoesNotExist:
-            pass
+        except Exception as e:
+            print(f"Error handling subscription deletion: {str(e)}")
     
     def handle_invoice_payment_succeeded(self, invoice):
         """Handle successful invoice payment"""
         try:
-            subscription = UserSubscription.objects.get(
+            subscription = UserSubscription.objects.filter(
                 stripe_subscription_id=invoice['subscription']
-            )
+            ).first()
+            
+            if not subscription:
+                return
             
             # Update subscription status to active
             subscription.status = 'active'
             subscription.save()
             
-        except UserSubscription.DoesNotExist:
-            pass
+        except Exception as e:
+            print(f"Error handling invoice payment: {str(e)}")
 
 class AdminSubscriptionStatsView(APIView):
     """Admin view for subscription statistics"""
@@ -594,14 +611,18 @@ class CreateCheckoutSessionView(APIView):
         """Create a Checkout Session and return the URL"""
         try:
             plan_id = request.data.get('plan_id')
-            trial_period_days = request.data.get('trial_period_days', 0)
+            
+            if not plan_id:
+                return Response({
+                    'error': 'plan_id is required'
+                }, status=status.HTTP_400_BAD_REQUEST)
             
             # Validate plan
             try:
                 plan = SubscriptionPlan.objects.get(id=plan_id, is_active=True)
             except SubscriptionPlan.DoesNotExist:
                 return Response(
-                    {'error': 'Invalid subscription plan'}, 
+                    {'error': f'Invalid subscription plan with id {plan_id}'}, 
                     status=status.HTTP_404_NOT_FOUND
                 )
             
@@ -620,36 +641,45 @@ class CreateCheckoutSessionView(APIView):
             # Get or create Stripe customer
             customer = self.get_or_create_stripe_customer(request.user)
             
-            # Determine the success and cancel URLs - Use production backend URL
-            backend_url = 'https://h2o427-backend-u9bx.onrender.com'
+            # Determine the success and cancel URLs
+            backend_url = settings.RENDER_EXTERNAL_HOSTNAME if hasattr(settings, 'RENDER_EXTERNAL_HOSTNAME') else 'http://127.0.0.1:8000'
             success_url = f"{backend_url}/api/subscriptions/ui/success/?session_id={{CHECKOUT_SESSION_ID}}"
             cancel_url = f"{backend_url}/api/subscriptions/ui/cancel/"
             
-            # Create Checkout Session
-            checkout_session_params = {
-                'customer': customer.id,
-                'payment_method_types': ['card'],
-                'line_items': [{
-                    'price': plan.stripe_price_id,
-                    'quantity': 1,
-                }],
-                'mode': 'subscription',
-                'success_url': success_url,
-                'cancel_url': cancel_url,
-                'metadata': {
-                    'user_id': request.user.id,
-                    'plan_id': plan.id,
-                }
-            }
+            # Calculate amount in cents
+            amount_in_cents = int(float(plan.price_per_report) * 100)
             
-            # Add trial if specified
-            if trial_period_days > 0:
-                checkout_session_params['subscription_data'] = {
-                    'trial_period_days': trial_period_days
-                }
-            
-            # Create the session
-            checkout_session = stripe.checkout.Session.create(**checkout_session_params)
+            # Create Checkout Session for one-time payment
+            try:
+                checkout_session = stripe.checkout.Session.create(
+                    customer=customer.id,
+                    payment_method_types=['card'],
+                    line_items=[{
+                        'price_data': {
+                            'currency': 'usd',
+                            'unit_amount': amount_in_cents,
+                            'product_data': {
+                                'name': plan.name,
+                                'description': plan.description or f'{plan.name} - Background Check Plan',
+                            },
+                        },
+                        'quantity': 1,
+                    }],
+                    mode='payment',
+                    success_url=success_url,
+                    cancel_url=cancel_url,
+                    metadata={
+                        'user_id': str(request.user.id),
+                        'plan_id': str(plan.id),
+                        'purchase_type': 'plan_subscription'
+                    }
+                )
+            except Exception as e:
+                return Response({
+                    'error': 'Failed to create checkout session',
+                    'details': str(e),
+                    'hint': 'Check if Stripe API keys are configured correctly'
+                }, status=status.HTTP_400_BAD_REQUEST)
             
             return Response({
                 'checkout_url': checkout_session.url,
@@ -658,10 +688,23 @@ class CreateCheckoutSessionView(APIView):
             }, status=status.HTTP_200_OK)
             
         except Exception as e:
-            return Response(
-                {'error': str(e)}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            # Invalid API key or invalid parameters
+            return Response({
+                'error': 'Stripe request failed',
+                'details': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except SubscriptionPlan.DoesNotExist:
+            return Response({
+                'error': 'Plan not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            # Generic error with more details
+            import traceback
+            return Response({
+                'error': str(e),
+                'type': type(e).__name__,
+                'traceback': traceback.format_exc()
+            }, status=status.HTTP_400_BAD_REQUEST)
     
     def get_or_create_stripe_customer(self, user):
         """Get or create a Stripe customer for the user"""
@@ -731,47 +774,62 @@ class VerifyCheckoutSessionView(APIView):
                     'message': 'Payment is still being processed'
                 })
             
-            # Get the subscription ID from Stripe
-            stripe_subscription_id = checkout_session.subscription
+            # Get customer and plan info
             stripe_customer_id = checkout_session.customer
-            
-            # Retrieve plan from metadata
             plan_id = checkout_session.metadata.get('plan_id')
+            
+            if not plan_id:
+                return Response(
+                    {'error': 'Plan ID not found in checkout session'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
             plan = SubscriptionPlan.objects.get(id=plan_id)
             
-            # Retrieve the subscription from Stripe to get details
-            stripe_subscription = stripe.Subscription.retrieve(stripe_subscription_id)
+            # Check if this is a one-time payment or subscription
+            if checkout_session.mode == 'payment':
+                # One-time payment - create/update subscription without stripe_subscription_id
+                user_subscription, created = UserSubscription.objects.update_or_create(
+                    user=request.user,
+                    defaults={
+                        'plan': plan,
+                        'stripe_customer_id': stripe_customer_id,
+                        'status': 'active',
+                    }
+                )
+            else:
+                # Recurring subscription mode
+                stripe_subscription_id = checkout_session.subscription
+                stripe_subscription = stripe.Subscription.retrieve(stripe_subscription_id)
+                
+                user_subscription, created = UserSubscription.objects.update_or_create(
+                    user=request.user,
+                    defaults={
+                        'plan': plan,
+                        'stripe_subscription_id': stripe_subscription_id,
+                        'stripe_customer_id': stripe_customer_id,
+                        'status': 'active' if stripe_subscription.status == 'active' else stripe_subscription.status,
+                    }
+                )
             
-            # Create or update local subscription
-            user_subscription, created = UserSubscription.objects.update_or_create(
-                user=request.user,
-                defaults={
-                    'plan': plan,
-                    'stripe_subscription_id': stripe_subscription_id,
-                    'stripe_customer_id': stripe_customer_id,
-                    'status': 'active' if stripe_subscription.status == 'active' else stripe_subscription.status,
-                    'start_date': timezone.now(),
-                    'end_date': timezone.datetime.fromtimestamp(
-                        stripe_subscription.current_period_end, 
-                        tz=timezone.get_current_timezone()
-                    ),
-                    'trial_end': timezone.datetime.fromtimestamp(
-                        stripe_subscription.trial_end, 
-                        tz=timezone.get_current_timezone()
-                    ) if stripe_subscription.trial_end else None,
-                }
-            )
+            # Check if payment history already exists
+            payment_intent_id = checkout_session.payment_intent
+            existing_payment = PaymentHistory.objects.filter(
+                stripe_payment_intent_id=payment_intent_id
+            ).first()
             
-            # Create payment history record
-            PaymentHistory.objects.create(
-                user=request.user,
-                subscription=user_subscription,
-                amount=plan.price,
-                currency='USD',
-                status='succeeded',
-                stripe_payment_intent_id=checkout_session.payment_intent,
-                description=f"Subscription to {plan.name}"
-            )
+            if not existing_payment:
+                # Create payment history record
+                PaymentHistory.objects.create(
+                    user=request.user,
+                    subscription=user_subscription,
+                    plan=plan,
+                    amount=checkout_session.amount_total / 100,  # Convert cents to dollars
+                    currency='USD',
+                    status='succeeded',
+                    stripe_payment_intent_id=payment_intent_id,
+                    description=f"Purchase: {plan.name}"
+                )
             
             return Response({
                 'status': 'success',

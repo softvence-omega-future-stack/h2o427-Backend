@@ -6,7 +6,7 @@ from .admin_views import (
     AdminAssignmentView, AdminUsersView, AdminAllUsersView, AdminUserDetailView,
     AdminReportDownloadView, AdminPlanManagementView, AdminPlanDetailView, 
     AdminPlanToggleStatusView, AdminNotificationView, AdminNotificationMarkReadView, 
-    AdminNotificationMarkAllReadView
+    AdminNotificationMarkAllReadView, AdminPaymentHistoryView, AdminSubscriptionAnalyticsView
 )
 
 urlpatterns = [
@@ -37,6 +37,10 @@ urlpatterns = [
     path('plans/', AdminPlanManagementView.as_view(), name='admin_plans'),
     path('plans/<int:plan_id>/', AdminPlanDetailView.as_view(), name='admin_plan_detail'),
     path('plans/<int:plan_id>/toggle-status/', AdminPlanToggleStatusView.as_view(), name='admin_plan_toggle_status'),
+    
+    # NEW: Payment & Subscription Analytics
+    path('payments/', AdminPaymentHistoryView.as_view(), name='admin_payment_history'),
+    path('analytics/', AdminSubscriptionAnalyticsView.as_view(), name='admin_subscription_analytics'),
 ]
 
 # Notification endpoints (to be added to notifications app urls)

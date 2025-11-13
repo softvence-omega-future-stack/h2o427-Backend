@@ -981,3 +981,225 @@ class AdminNotificationMarkAllReadView(APIView):
             'message': f'{updated_count} notifications marked as read',
             'count': updated_count
         })
+
+
+class AdminPaymentHistoryView(APIView):
+    """View all payment transactions across all users"""
+    permission_classes = [permissions.IsAdminUser]
+    
+    @swagger_auto_schema(
+        operation_summary="Get All Payment Transactions",
+        operation_description="Get list of all payment transactions across all users with filtering options.",
+        operation_id="admin_payment_history",
+        tags=['Admin - Payments'],
+        manual_parameters=[
+            openapi.Parameter('user_id', openapi.IN_QUERY, description="Filter by user ID", type=openapi.TYPE_INTEGER),
+            openapi.Parameter('status', openapi.IN_QUERY, description="Filter by payment status (succeeded, pending, failed, canceled, refunded)", type=openapi.TYPE_STRING),
+            openapi.Parameter('start_date', openapi.IN_QUERY, description="Filter payments after this date (YYYY-MM-DD)", type=openapi.TYPE_STRING),
+            openapi.Parameter('end_date', openapi.IN_QUERY, description="Filter payments before this date (YYYY-MM-DD)", type=openapi.TYPE_STRING),
+        ],
+        responses={
+            200: openapi.Response(
+                description="List of payment transactions",
+                examples={
+                    "application/json": {
+                        "count": 50,
+                        "total_amount": "1250.00",
+                        "payments": [
+                            {
+                                "id": 1,
+                                "user": {
+                                    "id": 42,
+                                    "username": "john_doe",
+                                    "email": "john@example.com"
+                                },
+                                "plan": "Basic Plan",
+                                "amount": "25.00",
+                                "currency": "USD",
+                                "status": "succeeded",
+                                "reports_purchased": 10,
+                                "stripe_payment_intent_id": "pi_abc123",
+                                "created_at": "2024-11-12T10:30:00Z"
+                            }
+                        ]
+                    }
+                }
+            ),
+            403: "Forbidden - Admin access required"
+        }
+    )
+    def get(self, request):
+        from subscriptions.models import PaymentHistory
+        from decimal import Decimal
+        
+        # Get query parameters
+        user_id = request.query_params.get('user_id')
+        payment_status = request.query_params.get('status')
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        
+        # Base queryset
+        payments = PaymentHistory.objects.select_related('user', 'plan').all()
+        
+        # Apply filters
+        if user_id:
+            payments = payments.filter(user_id=user_id)
+        if payment_status:
+            payments = payments.filter(status=payment_status)
+        if start_date:
+            payments = payments.filter(created_at__gte=start_date)
+        if end_date:
+            payments = payments.filter(created_at__lte=end_date)
+        
+        # Order by most recent
+        payments = payments.order_by('-created_at')
+        
+        # Calculate totals
+        total_amount = sum(payment.amount for payment in payments)
+        
+        # Serialize data
+        payments_data = []
+        for payment in payments:
+            payments_data.append({
+                'id': payment.id,
+                'user': {
+                    'id': payment.user.id,
+                    'username': payment.user.username,
+                    'email': payment.user.email,
+                    'full_name': f"{payment.user.first_name} {payment.user.last_name}".strip() or payment.user.username
+                },
+                'plan': payment.plan.name if payment.plan else None,
+                'amount': str(payment.amount),
+                'currency': payment.currency,
+                'status': payment.status,
+                'reports_purchased': payment.reports_purchased,
+                'description': payment.description,
+                'stripe_payment_intent_id': payment.stripe_payment_intent_id,
+                'stripe_charge_id': payment.stripe_charge_id,
+                'failure_reason': payment.failure_reason,
+                'created_at': payment.created_at,
+                'updated_at': payment.updated_at
+            })
+        
+        return Response({
+            'count': len(payments_data),
+            'total_amount': str(total_amount),
+            'filters_applied': {
+                'user_id': user_id,
+                'status': payment_status,
+                'start_date': start_date,
+                'end_date': end_date
+            },
+            'payments': payments_data
+        })
+
+
+class AdminSubscriptionAnalyticsView(APIView):
+    """Get subscription and payment analytics"""
+    permission_classes = [permissions.IsAdminUser]
+    
+    @swagger_auto_schema(
+        operation_summary="Get Subscription Analytics",
+        operation_description="Get comprehensive analytics including revenue, active subscriptions, popular plans, etc.",
+        operation_id="admin_subscription_analytics",
+        tags=['Admin - Payments'],
+        responses={
+            200: openapi.Response(
+                description="Analytics data",
+                examples={
+                    "application/json": {
+                        "total_revenue": "15000.00",
+                        "active_subscriptions": 150,
+                        "total_transactions": 500,
+                        "popular_plans": [],
+                        "revenue_by_month": []
+                    }
+                }
+            ),
+            403: "Forbidden - Admin access required"
+        }
+    )
+    def get(self, request):
+        from subscriptions.models import PaymentHistory, UserSubscription, SubscriptionPlan
+        from django.db.models import Sum, Count
+        from django.db.models.functions import TruncMonth
+        from decimal import Decimal
+        
+        # Total revenue
+        total_revenue = PaymentHistory.objects.filter(status='succeeded').aggregate(
+            total=Sum('amount')
+        )['total'] or Decimal('0.00')
+        
+        # Active subscriptions count (users with plans)
+        active_subscriptions = UserSubscription.objects.filter(plan__isnull=False).count()
+        
+        # Total transactions
+        total_transactions = PaymentHistory.objects.count()
+        successful_transactions = PaymentHistory.objects.filter(status='succeeded').count()
+        failed_transactions = PaymentHistory.objects.filter(status='failed').count()
+        
+        # Popular plans
+        popular_plans = SubscriptionPlan.objects.annotate(
+            subscriber_count=Count('usersubscription'),
+            total_revenue=Sum('paymenthistory__amount', filter=Q(paymenthistory__status='succeeded'))
+        ).order_by('-subscriber_count')[:5]
+        
+        popular_plans_data = []
+        for plan in popular_plans:
+            popular_plans_data.append({
+                'id': plan.id,
+                'name': plan.name,
+                'price_per_report': str(plan.price_per_report),
+                'subscribers': plan.subscriber_count,
+                'revenue': str(plan.total_revenue or Decimal('0.00'))
+            })
+        
+        # Revenue by month (last 12 months)
+        revenue_by_month = PaymentHistory.objects.filter(
+            status='succeeded',
+            created_at__gte=timezone.now() - timezone.timedelta(days=365)
+        ).annotate(
+            month=TruncMonth('created_at')
+        ).values('month').annotate(
+            revenue=Sum('amount'),
+            transactions=Count('id')
+        ).order_by('month')
+        
+        revenue_by_month_data = []
+        for item in revenue_by_month:
+            revenue_by_month_data.append({
+                'month': item['month'].strftime('%Y-%m'),
+                'revenue': str(item['revenue']),
+                'transactions': item['transactions']
+            })
+        
+        # Recent large transactions
+        recent_large_transactions = PaymentHistory.objects.filter(
+            status='succeeded',
+            amount__gte=Decimal('50.00')
+        ).select_related('user', 'plan').order_by('-created_at')[:10]
+        
+        large_transactions_data = []
+        for payment in recent_large_transactions:
+            large_transactions_data.append({
+                'id': payment.id,
+                'user': payment.user.username,
+                'amount': str(payment.amount),
+                'plan': payment.plan.name if payment.plan else None,
+                'reports_purchased': payment.reports_purchased,
+                'created_at': payment.created_at
+            })
+        
+        return Response({
+            'overview': {
+                'total_revenue': str(total_revenue),
+                'active_subscriptions': active_subscriptions,
+                'total_transactions': total_transactions,
+                'successful_transactions': successful_transactions,
+                'failed_transactions': failed_transactions,
+                'success_rate': f"{(successful_transactions/total_transactions*100):.1f}%" if total_transactions > 0 else "0%"
+            },
+            'popular_plans': popular_plans_data,
+            'revenue_by_month': revenue_by_month_data,
+            'recent_large_transactions': large_transactions_data
+        })
