@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Cancelled</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #FFF5EB;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .popup-container {
+            background: white;
+            border: 2px solid #FF9447;
+            border-radius: 8px;
+            max-width: 500px;
+            width: 100%;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .cancel-icon {
+            width: 60px;
+            height: 60px;
+            margin: 0 auto 20px;
+            background: #FF9447;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .cancel-icon svg {
+            width: 35px;
+            height: 35px;
+            stroke: white;
+            stroke-width: 3;
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        h1 {
+            color: #333;
+            font-size: 24px;
+            margin-bottom: 10px;
+            font-weight: normal;
+        }
+
+        .message {
+            color: #666;
+            font-size: 14px;
+            line-height: 1.5;
+            margin-bottom: 30px;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            background: #FF9447;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 14px;
+            margin: 5px;
+            border: none;
+        }
+
+        .btn:hover {
+            background: #FF8033;
+        }
+
+        .btn-secondary {
+            background: white;
+            color: #333;
+            border: 1px solid #ddd;
+        }
+
+        .btn-secondary:hover {
+            background: #f5f5f5;
+        }
+    </style>
+</head>
+<body>
+    <div class="popup-container">
+        <div class="cancel-icon">
+            <svg viewBox="0 0 52 52">
+                <line x1="16" y1="16" x2="36" y2="36"></line>
+                <line x1="36" y1="16" x2="16" y2="36"></line>
+            </svg>
+        </div>
+
+        <h1>Payment Cancelled</h1>
+        <p class="message">
+            Your payment was cancelled. You can try again anytime when you're ready.
+        </p>
+
+        <div style="margin-top: 25px;">
+            {% if request_id %}
+            <a href="/api/requests/api/{{ request_id }}/select-pricing/" class="btn">Try Again</a>
+            {% endif %}
+            <a href="/api/requests/api/" class="btn btn-secondary">Back to Dashboard</a>
+        </div>
+    </div>
+</body>
+</html>

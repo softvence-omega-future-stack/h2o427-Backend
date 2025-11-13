@@ -795,8 +795,10 @@ class RequestViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
-            # Validate report type
+            # Validate plan ID
             from .serializers import PaymentPricingSerializer
+            from subscriptions.models import SubscriptionPlan
+            
             serializer = PaymentPricingSerializer(data=request.data)
             
             if not serializer.is_valid():
@@ -804,20 +806,30 @@ class RequestViewSet(viewsets.ModelViewSet):
                     {
                         'error': 'Invalid data provided',
                         'details': serializer.errors,
-                        'hint': 'Make sure to send {"report_type": "basic"} or {"report_type": "premium"}'
+                        'hint': 'Make sure to send {"plan_id": 1} with a valid plan ID'
                     },
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
-            report_type = serializer.validated_data['report_type']
+            plan_id = serializer.validated_data['plan_id']
             
-            # Set amount based on report type
-            if report_type == 'basic':
-                amount = 25.00
-                description = "Basic Background Check Report"
-            else:  # premium
-                amount = 50.00
-                description = "Premium Background Check Report"
+            # Get plan from database
+            try:
+                plan = SubscriptionPlan.objects.get(id=plan_id, is_active=True)
+            except SubscriptionPlan.DoesNotExist:
+                return Response(
+                    {'error': 'Plan not found or not active'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Get amount and description from plan
+            amount = float(plan.price_per_report)
+            description = plan.name
+            report_type = plan.plan_type
+            
+            # Get frontend URL from settings or use default
+            # For MTV pattern with Django templates, use the Django view URL
+            frontend_url = request.build_absolute_uri('/api/requests')
             
             # Create Stripe Checkout Session
             checkout_session = stripe.checkout.Session.create(
@@ -834,15 +846,13 @@ class RequestViewSet(viewsets.ModelViewSet):
                     'quantity': 1,
                 }],
                 mode='payment',
-                success_url=request.build_absolute_uri(
-                    f'/api/requests/api/{bg_request.id}/confirm-payment/?session_id={{CHECKOUT_SESSION_ID}}'
-                ),
-                cancel_url=request.build_absolute_uri(
-                    f'/api/requests/api/{bg_request.id}/payment-cancelled/'
-                ),
+                # MTV pattern: redirect to Django template view
+                success_url=f"{frontend_url}/payment-success/?request_id={bg_request.id}&session_id={{CHECKOUT_SESSION_ID}}",
+                cancel_url=f"{frontend_url}/payment-cancelled/?request_id={bg_request.id}",
                 metadata={
                     'request_id': bg_request.id,
                     'report_type': report_type,
+                    'plan_id': plan.id,
                     'user_id': request.user.id
                 }
             )
@@ -857,7 +867,11 @@ class RequestViewSet(viewsets.ModelViewSet):
                 'success': True,
                 'checkout_url': checkout_session.url,
                 'session_id': checkout_session.id,
-                'report_type': report_type,
+                'plan': {
+                    'id': plan.id,
+                    'name': plan.name,
+                    'type': plan.plan_type
+                },
                 'amount': amount,
                 'message': 'Redirect user to checkout_url to complete payment'
             })
@@ -1379,3 +1393,56 @@ def request_success_view(request, request_id):
     except Request.DoesNotExist:
         messages.error(request, 'Request not found')
         return redirect('subscriptions:subscription_dashboard')
+
+
+def payment_success_view(request):
+    """Display payment success page with confirmation popup (MTV pattern)"""
+    from django.shortcuts import render
+    from subscriptions.models import SubscriptionPlan
+    
+    request_id = request.GET.get('request_id')
+    session_id = request.GET.get('session_id')
+    
+    if not request_id:
+        return render(request, 'payment_success.html', {
+            'request_id': 'Unknown',
+            'plan_name': 'Unknown',
+            'amount': '0.00',
+            'error': 'Request ID not found'
+        })
+    
+    try:
+        bg_request = Request.objects.get(id=request_id)
+        
+        # Get plan details if available
+        plan_name = "Background Check"
+        amount = bg_request.payment_amount if bg_request.payment_amount else "0.00"
+        
+        if bg_request.report_type:
+            plan_name = f"{bg_request.report_type.title()} Plan"
+        
+        return render(request, 'payment_success.html', {
+            'request_id': request_id,
+            'session_id': session_id,
+            'plan_name': plan_name,
+            'amount': amount,
+            'bg_request': bg_request
+        })
+    except Request.DoesNotExist:
+        return render(request, 'payment_success.html', {
+            'request_id': request_id,
+            'plan_name': 'Unknown',
+            'amount': '0.00',
+            'error': 'Request not found'
+        })
+
+
+def payment_cancelled_view(request):
+    """Display payment cancelled page"""
+    from django.shortcuts import render
+    
+    request_id = request.GET.get('request_id')
+    
+    return render(request, 'payment_cancelled.html', {
+        'request_id': request_id
+    })

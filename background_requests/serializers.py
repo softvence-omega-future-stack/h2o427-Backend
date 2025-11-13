@@ -280,13 +280,17 @@ class AdminReportFormSerializer(serializers.ModelSerializer):
 
 
 class PaymentPricingSerializer(serializers.Serializer):
-    """Serializer for selecting report type and creating payment"""
-    report_type = serializers.ChoiceField(
-        choices=[('basic', 'Basic Report - $25'), ('premium', 'Premium Report - $50')],
-        help_text="Select the type of background check report"
+    """Serializer for selecting plan and creating payment"""
+    plan_id = serializers.IntegerField(
+        help_text="ID of the subscription plan to purchase"
     )
     
-    def validate_report_type(self, value):
-        if value not in ['basic', 'premium']:
-            raise serializers.ValidationError("Invalid report type. Choose 'basic' or 'premium'")
+    def validate_plan_id(self, value):
+        from subscriptions.models import SubscriptionPlan
+        
+        try:
+            plan = SubscriptionPlan.objects.get(id=value, is_active=True)
+        except SubscriptionPlan.DoesNotExist:
+            raise serializers.ValidationError("Invalid plan ID or plan is not active")
+        
         return value

@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Successful</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #FFF5EB;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .popup-container {
+            background: white;
+            border: 2px solid #FF9447;
+            border-radius: 8px;
+            max-width: 500px;
+            width: 100%;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .success-icon {
+            width: 60px;
+            height: 60px;
+            margin: 0 auto 20px;
+            background: #FF9447;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .success-icon svg {
+            width: 35px;
+            height: 35px;
+            stroke: white;
+            stroke-width: 3;
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        h1 {
+            color: #333;
+            font-size: 24px;
+            margin-bottom: 10px;
+            font-weight: normal;
+        }
+
+        .message {
+            color: #666;
+            font-size: 14px;
+            line-height: 1.5;
+            margin-bottom: 25px;
+        }
+
+        .details {
+            background: #FFF5EB;
+            border-radius: 4px;
+            padding: 20px;
+            margin-bottom: 25px;
+            text-align: left;
+        }
+
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #FFD4B3;
+        }
+
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+
+        .detail-label {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .detail-value {
+            color: #333;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            background: #FF9447;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 14px;
+            margin: 5px;
+            border: none;
+        }
+
+        .btn:hover {
+            background: #FF8033;
+        }
+
+        .btn-secondary {
+            background: white;
+            color: #333;
+            border: 1px solid #ddd;
+        }
+
+        .btn-secondary:hover {
+            background: #f5f5f5;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #FFD4B3;
+            border-top-color: #FF9447;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .status-message {
+            color: #FF9447;
+            font-weight: bold;
+            margin-top: 15px;
+            font-size: 14px;
+        }
+
+        .error-message {
+            color: #d63031;
+            font-weight: bold;
+            margin-top: 15px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="popup-container">
+        <div class="success-icon">
+            <svg viewBox="0 0 52 52">
+                <path d="M14 27l9 9L38 18"/>
+            </svg>
+        </div>
+
+        <h1>Payment Successful</h1>
+        <p class="message">
+            Thank you for your payment. Your background check request has been received and will be processed shortly.
+        </p>
+
+        <div class="details">
+            <div class="detail-row">
+                <span class="detail-label">Request ID:</span>
+                <span class="detail-value" id="request-id">{{ request_id }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Plan:</span>
+                <span class="detail-value" id="plan-name">{{ plan_name }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Amount:</span>
+                <span class="detail-value" id="amount">${{ amount }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Status:</span>
+                <span class="detail-value" style="color: #FF9447;">Paid</span>
+            </div>
+        </div>
+
+        <div id="confirmation-status">
+            <div class="loading"></div>
+            <span>Confirming payment...</span>
+        </div>
+
+        <div style="margin-top: 25px;">
+            <a href="/api/requests/api/{{ request_id }}/" class="btn">View Request Status</a>
+            <a href="/api/requests/api/" class="btn btn-secondary">Back to Dashboard</a>
+        </div>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionId = urlParams.get('session_id');
+        const requestId = "{{ request_id }}";
+
+        if (sessionId && requestId) {
+            fetch(`/api/requests/api/${requestId}/confirm-payment/?session_id=${sessionId}`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                const statusDiv = document.getElementById('confirmation-status');
+                if (data.status === 'success' || data.success) {
+                    statusDiv.innerHTML = '<div class="status-message">Payment confirmed successfully</div>';
+                } else {
+                    statusDiv.innerHTML = '<div class="error-message">Payment confirmation pending. Please check your request status.</div>';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                const statusDiv = document.getElementById('confirmation-status');
+                statusDiv.innerHTML = '<div class="error-message">Unable to confirm payment automatically. Your payment was successful, but confirmation is pending.</div>';
+            });
+        } else {
+            document.getElementById('confirmation-status').innerHTML = '<div class="status-message">Payment received</div>';
+        }
+    </script>
+</body>
+</html>
