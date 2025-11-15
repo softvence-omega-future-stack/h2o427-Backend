@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth import get_user_model
+from django.core.files.storage import default_storage
 
 class Request(models.Model):
     PENDING = 'Pending'
@@ -95,7 +96,7 @@ class Request(models.Model):
 
 class Report(models.Model):
     request = models.OneToOneField(Request, on_delete=models.CASCADE, related_name='report')
-    pdf = models.FileField(upload_to='reports/')
+    pdf = models.FileField(upload_to='reports/', storage=default_storage)
     generated_at = models.DateTimeField(auto_now_add=True)
     notes = models.TextField(blank=True, null=True)
     
