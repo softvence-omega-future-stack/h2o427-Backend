@@ -236,6 +236,12 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 # Additional directories where static files are found
 STATICFILES_DIRS = []
 
+# Static files finders - ensure all app static files are found
+STATICFILES_FINDERS = [
+    'django.contrib.staticfiles.finders.FileSystemFinder',
+    'django.contrib.staticfiles.finders.AppDirectoriesFinder',
+]
+
 # WhiteNoise configuration for serving static files in production
 # Use CompressedStaticFilesStorage instead of CompressedManifestStaticFilesStorage
 # to avoid issues with missing manifest files in production
@@ -251,6 +257,7 @@ STORAGES = {
 # WhiteNoise settings - allow serving static files even when DEBUG=False
 WHITENOISE_AUTOREFRESH = True if DEBUG else False
 WHITENOISE_USE_FINDERS = DEBUG
+WHITENOISE_ALLOW_ALL_ORIGINS = True
 
 # Media files (User uploads)
 # Use Cloudinary for production, local filesystem for development
