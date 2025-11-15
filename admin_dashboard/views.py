@@ -146,7 +146,8 @@ class AdminReportView(APIView):
         """Upload or generate PDF report for a background check request"""
         try:
             request_id = request.data.get('request_id')
-            pdf_file = request.FILES.get('pdf')
+            # Accept both 'pdf' and 'report_file' for backward compatibility
+            pdf_file = request.FILES.get('pdf') or request.FILES.get('report_file')
             notes = request.data.get('notes', '')
             
             if not request_id:
