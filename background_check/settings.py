@@ -267,13 +267,17 @@ if not DEBUG:
         'CLOUD_NAME': os.getenv('CLOUDINARY_CLOUD_NAME'),
         'API_KEY': os.getenv('CLOUDINARY_API_KEY'),
         'API_SECRET': os.getenv('CLOUDINARY_API_SECRET'),
+        # Store PDFs and documents as raw files (not images)
+        'RESOURCE_TYPE': 'raw',
+        'FORMAT': None,  # Don't convert file formats
     }
-    DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+    # Use RawMediaCloudinaryStorage for non-image files like PDFs
+    DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.RawMediaCloudinaryStorage'
     MEDIA_URL = '/media/'  # Cloudinary will handle the actual URLs
     
     # Update STORAGES for Cloudinary in production
     STORAGES["default"] = {
-        "BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage",
+        "BACKEND": "cloudinary_storage.storage.RawMediaCloudinaryStorage",
     }
 else:
     # Local file storage for development
