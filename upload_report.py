@@ -4,7 +4,7 @@ Simple script to upload a PDF report to production using the admin endpoint
 import requests
 import os
 
-BASE_URL = "http://127.0.0.1:8000/"
+BASE_URL = "https://h2o427-backend-u9bx.onrender.com"
 UPLOAD_ENDPOINT = f"{BASE_URL}/api/admin/reports/upload/"
 
 print("=" * 70)
