@@ -79,6 +79,11 @@ class UserSubscriptionView(APIView):
     )
     def get(self, request):
         """Get current user's subscription details"""
+        if not request.user or not request.user.is_authenticated:
+            return Response({
+                'error': 'Authentication required'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+        
         try:
             subscription = UserSubscription.objects.get(user=request.user)
             serializer = UserSubscriptionSerializer(subscription)
