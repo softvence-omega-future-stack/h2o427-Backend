@@ -1379,12 +1379,15 @@ class ReportViewSet(viewsets.ModelViewSet):
                     'request_id': report.request.id
                 }, status=status.HTTP_404_NOT_FOUND)
             
+            # Calculate file size in MB (handle None for cloud storage)
+            size_mb = f"{file_size / (1024 * 1024):.2f} MB" if file_size else "Unknown"
+            
             return Response({
                 'success': True,
                 'download_url': request.build_absolute_uri(report.pdf.url),
                 'filename': filename,
                 'size': file_size,
-                'size_mb': f"{file_size / (1024 * 1024):.2f} MB",
+                'size_mb': size_mb,
                 'report_id': report.id,
                 'request_id': report.request.id,
                 'generated_at': report.generated_at
