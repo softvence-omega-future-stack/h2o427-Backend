@@ -195,7 +195,12 @@ SWAGGER_SETTINGS = {
         }
     },
     'PERSIST_AUTH': True,
+    'VALIDATOR_URL': None,  # Disable validator in production
 }
+
+# Allow Swagger UI to be served even when DEBUG=False
+# This is needed because Swagger UI requires static assets
+SERVE_SWAGGER_WITHOUT_DEBUG = True
 
 
 # Internationalization
@@ -213,8 +218,11 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# Additional directories where static files are found
+STATICFILES_DIRS = []
 
 # WhiteNoise configuration for serving static files in production
 STORAGES = {
@@ -225,6 +233,11 @@ STORAGES = {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
 }
+
+# WhiteNoise settings - allow serving static files even when DEBUG=False
+WHITENOISE_AUTOREFRESH = True if DEBUG else False
+WHITENOISE_USE_FINDERS = DEBUG
+WHITENOISE_MANIFEST_STRICT = False  # Don't break on missing files
 
 # Media files (User uploads)
 # Use Cloudinary for production, local filesystem for development
