@@ -192,6 +192,9 @@ class RequestViewSet(viewsets.ModelViewSet):
                     'report_id': report.id
                 }, status=status.HTTP_404_NOT_FOUND)
             
+            # Calculate file size in MB (handle None for cloud storage)
+            file_size_mb = f"{file_size / (1024 * 1024):.2f} MB" if file_size else "Unknown"
+            
             # Return report details with download URL
             return Response({
                 'success': True,
@@ -202,7 +205,7 @@ class RequestViewSet(viewsets.ModelViewSet):
                     'generated_at': report.generated_at,
                     'notes': report.notes,
                     'file_size': file_size,
-                    'file_size_mb': f"{file_size / (1024 * 1024):.2f} MB"
+                    'file_size_mb': file_size_mb
                 },
                 'request': {
                     'id': bg_request.id,
