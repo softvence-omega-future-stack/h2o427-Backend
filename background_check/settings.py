@@ -260,24 +260,24 @@ WHITENOISE_USE_FINDERS = DEBUG
 WHITENOISE_ALLOW_ALL_ORIGINS = True
 
 # Media files (User uploads)
-# Use Cloudinary for production, local filesystem for development
-if not DEBUG:
-    # Cloudinary configuration for production
+# Always use Cloudinary if credentials are provided, regardless of DEBUG mode
+if os.getenv('CLOUDINARY_CLOUD_NAME'):
+    # Cloudinary configuration
     CLOUDINARY_STORAGE = {
         'CLOUD_NAME': os.getenv('CLOUDINARY_CLOUD_NAME'),
         'API_KEY': os.getenv('CLOUDINARY_API_KEY'),
         'API_SECRET': os.getenv('CLOUDINARY_API_SECRET'),
     }
-    # Use custom storage backend that makes files publicly accessible
+    # Use custom storage backend for PDFs
     DEFAULT_FILE_STORAGE = 'background_check.storage.PublicMediaCloudinaryStorage'
     MEDIA_URL = '/media/'  # Cloudinary will handle the actual URLs
     
-    # Update STORAGES for Cloudinary in production
+    # Update STORAGES for Cloudinary
     STORAGES["default"] = {
         "BACKEND": "background_check.storage.PublicMediaCloudinaryStorage",
     }
 else:
-    # Local file storage for development
+    # Local file storage fallback
     MEDIA_URL = '/media/'
     MEDIA_ROOT = BASE_DIR / 'media'
 
